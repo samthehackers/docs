@@ -16,6 +16,7 @@ const csp = [
 ].join("; ");
 
 const config: NextConfig = {
+  outputFileTracingRoot: __dirname,
   poweredByHeader: false,
   async headers() {
     return [

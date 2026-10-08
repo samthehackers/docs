@@ -1,8 +1,9 @@
 import { createHmac, createHash, timingSafeEqual } from "node:crypto";
-import type { PaymentProvider, VerifiedEvent, VerifiedPayment } from "./provider";
+import type { PaymentProvider, VerifiedPayment } from "./provider";
 import { PRODUCTS } from "@/lib/plans";
 
-const API = "https://api.paystack.co";
+// Overridable so e2e tests can point server-to-server verification at a local mock.
+const API = process.env.PAYSTACK_API_URL ?? "https://api.paystack.co";
 
 export function hmacSha512Hex(data: string, secret: string) {
   return createHmac("sha512", secret).update(data).digest("hex");

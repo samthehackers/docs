@@ -8,8 +8,8 @@
 # The secret is only ever sent in a header; this script never prints it and never enables shell tracing.
 set -euo pipefail
 
-: "${ALTRCAM_URL:?ALTRCAM_URL is not set}"
-: "${CRON_SECRET:?CRON_SECRET is not set}"
+[ -n "${ALTRCAM_URL:-}" ] || { echo "ALTRCAM_URL is not set" >&2; exit 2; }
+[ -n "${CRON_SECRET:-}" ] || { echo "CRON_SECRET is not set" >&2; exit 2; }
 
 endpoint="${1:-stale-sessions}"
 case "$endpoint" in
@@ -17,11 +17,20 @@ case "$endpoint" in
   *) echo "unknown endpoint '$endpoint' (expected stale-sessions, refill or retention)" >&2; exit 2 ;;
 esac
 
+# The secret goes to whatever host this names, so be strict: https, or plain http to exactly localhost / 127.0.0.1 (local
+# testing). No user info ("user@host" can disguise the real host), no whitespace or backslashes. The value is not echoed
+# back in the error because a mistyped URL may contain a password.
 base="${ALTRCAM_URL%/}"
+authority="${base#*://}"
+authority="${authority%%[/?#]*}"
+bad_url() { echo "ALTRCAM_URL must be an https:// URL with no user info (http is only allowed for localhost and 127.0.0.1)" >&2; exit 2; }
+case "$base" in *[[:space:]\\]*) bad_url ;; esac
+[ -n "$authority" ] || bad_url
+case "$authority" in *@*) bad_url ;; esac
 case "$base" in
   https://?*) ;;
-  http://localhost* | http://127.0.0.1*) ;; # local testing only
-  *) echo "ALTRCAM_URL must be an https:// URL (got '$base')" >&2; exit 2 ;;
+  http://localhost | http://localhost:* | http://localhost/* | http://127.0.0.1 | http://127.0.0.1:* | http://127.0.0.1/*) ;;
+  *) bad_url ;;
 esac
 
 attempts="${SWEEP_ATTEMPTS:-3}"

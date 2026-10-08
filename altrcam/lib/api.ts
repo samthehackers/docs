@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth, clerkClient } from "@clerk/nextjs/server";
+import { timingSafeEqual } from "node:crypto";
 import { z, ZodTypeAny } from "zod";
 
 export class HttpError extends Error {
@@ -49,7 +50,12 @@ export function parseQuery<S extends ZodTypeAny>(url: string, schema: S): z.infe
   return schema.parse(Object.fromEntries(new URL(url).searchParams));
 }
 
+/** Cron endpoints (Vercel crons or the GitHub Actions sweep) authenticate with `Authorization: Bearer $CRON_SECRET`. */
 export function requireCron(req: Request) {
-  const h = req.headers.get("authorization");
-  if (!process.env.CRON_SECRET || h !== `Bearer ${process.env.CRON_SECRET}`) throw new HttpError(401, "Unauthorized");
+  const secret = process.env.CRON_SECRET;
+  if (!secret) throw new HttpError(401, "Unauthorized"); // unconfigured means closed, never "Bearer undefined"
+  const got = Buffer.from(req.headers.get("authorization") ?? "");
+  const want = Buffer.from(`Bearer ${secret}`);
+  // Constant-time compare so the secret can't be recovered byte by byte from response timing.
+  if (got.length !== want.length || !timingSafeEqual(got, want)) throw new HttpError(401, "Unauthorized");
 }

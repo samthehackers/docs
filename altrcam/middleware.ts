@@ -1,7 +1,8 @@
 import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
 
 const isPublic = createRouteMatcher([
-  "/", "/pricing", "/sign-in(.*)", "/sign-up(.*)", "/api/webhooks/(.*)",
+  "/", "/pricing", "/how-it-works", "/faq", "/terms", "/privacy", "/contact",
+  "/robots.txt", "/sitemap.xml", "/sign-in(.*)", "/sign-up(.*)", "/api/webhooks/(.*)",
   // Cron routes authenticate with CRON_SECRET inside the handler.
   "/api/cron/(.*)",
 ]);

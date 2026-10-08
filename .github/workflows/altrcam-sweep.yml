@@ -1,0 +1,51 @@
+name: AltrCam stale-session sweep
+
+# Closes studio sessions whose browser stopped sending heartbeats (billed only up to the last heartbeat).
+# Vercel's Hobby plan only allows daily crons, so the every-5-minutes sweep runs here instead.
+#
+# OFF until you opt in. Set, under Settings -> Secrets and variables -> Actions:
+#   variable  ALTRCAM_URL   e.g. https://altrcam.com   (the deployed app, no trailing path)
+#   secret    CRON_SECRET   the same value as the CRON_SECRET environment variable on the deployment
+#
+# Caveats worth knowing:
+#  - Scheduled workflows only run from the default branch, and GitHub may delay or skip runs under load, so
+#    treat the interval as "about every 5-15 minutes". Nothing here is billing-critical: heartbeats do the billing.
+#  - This repo is a fork. GitHub disables scheduled workflows on forks until enabled: check the Actions tab.
+#  - GitHub disables schedules in public repos after 60 days without repository activity.
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+    inputs:
+      endpoint:
+        description: Which cron endpoint to call
+        type: choice
+        default: stale-sessions
+        options: [stale-sessions, refill, retention]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: altrcam-sweep
+  cancel-in-progress: false
+
+jobs:
+  sweep:
+    # Skipped (not failed) until ALTRCAM_URL is set, so this doesn't create red runs on a repo that hasn't opted in.
+    if: ${{ vars.ALTRCAM_URL != '' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: altrcam/scripts
+          sparse-checkout-cone-mode: true
+      - name: Call the endpoint
+        # Inputs go through env, never interpolated into the script (no shell injection from dispatch inputs).
+        env:
+          ALTRCAM_URL: ${{ vars.ALTRCAM_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          ENDPOINT: ${{ inputs.endpoint }}
+        run: bash altrcam/scripts/sweep.sh "${ENDPOINT:-stale-sessions}"

@@ -10,11 +10,13 @@ import { getUserRow } from "@/lib/users";
 import { ledgerBalance } from "@/lib/credits";
 import { getPlan } from "@/lib/plan-config";
 import { meterSession } from "@/lib/metering";
+import { capabilities } from "@/lib/config";
 
 const Body = z.object({ presetId: z.number().int().optional(), settings: z.record(z.unknown()).optional() });
 
 export const POST = handle(async (req: Request) => {
   const userId = await requireUserId();
+  if (!capabilities().liveTransformation) throw new HttpError(503, "Live transformation isn't available yet. The service is not configured.", { code: "unavailable" });
   await rateLimit("sessionStart", userId);
   const body = await parseBody(req, Body);
   const user = await getUserRow(userId);

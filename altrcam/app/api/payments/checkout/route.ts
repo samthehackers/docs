@@ -8,6 +8,7 @@ import { payments } from "@/db/schema";
 import { getUserRow } from "@/lib/users";
 import { getProvider } from "@/lib/payments";
 import { expectedPrice, PRODUCT_IDS, PRODUCTS } from "@/lib/plans";
+import { capabilities } from "@/lib/config";
 
 const Body = z.object({ product: z.enum(PRODUCT_IDS as [string, ...string[]]), provider: z.enum(["paystack", "nowpayments"]) });
 
@@ -15,6 +16,9 @@ export const POST = handle(async (req: Request) => {
   const userId = await requireUserId();
   await rateLimit("checkout", userId);
   const { product, provider } = await parseBody(req, Body);
+  if (!capabilities()[provider === "paystack" ? "paystack" : "nowpayments"]) {
+    throw new HttpError(503, "Payments aren't available yet. Nothing was charged.", { code: "unavailable" });
+  }
   const p = PRODUCTS[product as keyof typeof PRODUCTS];
   const user = await getUserRow(userId);
   if (!user) throw new HttpError(403, "Account not found");

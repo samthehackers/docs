@@ -2,8 +2,11 @@
  * Browser-only. WebRTC signaling for the Lucy realtime endpoint, isolated in one file.
  *
  * Sequence: ICE servers → SDP offer → SDP answer → trickled ICE candidates → remote track.
- * Messages travel as JSON text frames over fal's realtime socket (@fal-ai/client), authenticated
+ * Messages travel over fal's realtime socket (@fal-ai/client), authenticated
  * with a short-lived token minted through our gated proxy (/api/fal/proxy).
+ *
+ * Serialization: uses the @fal-ai/client defaults (what fal's documented `fal.realtime.connect(...).send(obj)`
+ * usage relies on). Earlier this forced JSON text frames; that was a guess and has been removed.
  *
  * UNVERIFIED: the message `type` names / field names below were written without access to fal's
  * signaling spec (see README_LIMITATIONS.md). If fal's schema differs, only `Outgoing`, `Incoming`
@@ -66,8 +69,6 @@ export function connectLucy(o: ConnectOptions): LucyConnection {
     connectionKey: `altrcam-${o.sessionId}-${Math.random().toString(36).slice(2)}`,
     throttleInterval: 0,
     clientOnly: true,
-    encodeMessage: (m) => JSON.stringify(m),
-    decodeMessage: (d) => JSON.parse(typeof d === "string" ? d : new TextDecoder().decode(d as ArrayBuffer)),
     onResult: (msg) => void handleIncoming(msg as Incoming).catch((e) => fail(e)),
     onError: (e) => fail(e),
   });

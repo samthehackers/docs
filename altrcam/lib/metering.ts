@@ -19,7 +19,8 @@ export async function meterSession(sessionId: string, userId: string, o: { now?:
   const now = o.now ?? new Date();
   const out = await db().transaction(async (tx) => {
     // Ownership is part of the lookup: another user's session id returns nothing.
-    const [s] = await tx.execute<{ id: string }>(sql`select id from ${studioSessions} where id = ${sessionId} and user_id = ${userId} for update`);
+    const [s] = await tx.select({ id: studioSessions.id }).from(studioSessions)
+      .where(and(eq(studioSessions.id, sessionId), eq(studioSessions.userId, userId))).for("update");
     if (!s) return null;
     const [row] = await tx.select().from(studioSessions).where(eq(studioSessions.id, sessionId));
     const bal = await ledgerBalance(tx, userId);

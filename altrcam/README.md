@@ -4,7 +4,7 @@ Realtime AI video transformation on your webcam, as a real SaaS: accounts, plans
 
 **Stack:** Next.js 15 (App Router, TS strict) · Tailwind · Clerk · Supabase Postgres via Drizzle (server-side only) · Supabase Storage · fal.ai (`decart/lucy-2-5/realtime`) · Paystack + NOWPayments · Resend · Upstash Ratelimit · Vitest + Playwright · Vercel.
 
-> Read [`README_LIMITATIONS.md`](./README_LIMITATIONS.md) before going live. In particular, the fal WebRTC signaling message schema is **unverified** and has not been exercised against the real service.
+> **Going live? Follow [`GO_LIVE.md`](./GO_LIVE.md)** (ordered checklist, `npm run preflight`, exact Vercel settings). Read [`README_LIMITATIONS.md`](./README_LIMITATIONS.md) first. In particular, the fal WebRTC signaling message schema is **unverified** and has not been exercised against the real service.
 
 ## Quick start
 
@@ -35,7 +35,7 @@ Env is validated with Zod at boot in production (`lib/env.ts`, `instrumentation.
 | `NEXT_PUBLIC_APP_URL` | e.g. `https://altrcam.com` |
 | `PRICE_CURRENCY` (`NGN`\|`USD`), `PRICE_*` | Prices **in minor units** (kobo/cents). Webhooks compare paid amounts against these |
 
-Plans, limits and credit grants are config in [`lib/plans.ts`](./lib/plans.ts); nothing else hard-codes them.
+Plan limits have defaults in [`lib/plans.ts`](./lib/plans.ts) and can be overridden by an admin (Admin → Plans) without a deploy; server code reads the effective values through `getPlans()`. Prices are env vars (`PRICE_*`); until `PRICING_APPROVED=true` the pricing pages say they aren't final.
 
 ## Dashboard setup
 

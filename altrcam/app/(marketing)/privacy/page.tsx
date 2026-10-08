@@ -8,7 +8,7 @@ export default function Privacy() {
       <h2 className="pt-4 text-lg font-semibold text-foreground">What we collect</h2>
       <p>Account details (via Clerk), usage and credit records, payment references from our processors, and any images or clips you choose to save.</p>
       <h2 className="pt-4 text-lg font-semibold text-foreground">Camera video</h2>
-      <p>Your camera is accessed only when you start a session. Video is sent to our AI provider for realtime processing and is not recorded by default.</p>
+      <p>The Studio asks for camera access so you can see a local preview; that preview stays in your browser. Video is sent to our AI provider for realtime processing only after you press Go live, and it is not recorded by default.</p>
       <h2 className="pt-4 text-lg font-semibold text-foreground">Processors</h2>
       <p>We use Clerk (authentication), Supabase (database and storage), fal.ai (AI inference), Paystack and NOWPayments (payments), Resend (email) and Upstash (rate limiting).</p>
       <h2 className="pt-4 text-lg font-semibold text-foreground">Retention and deletion</h2>

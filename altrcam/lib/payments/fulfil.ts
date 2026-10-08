@@ -6,6 +6,7 @@ import { notify, userEmailIfEnabled } from "@/lib/notifications";
 import { sendEmail, esc } from "@/lib/email";
 import { PRODUCTS, type ProductId } from "@/lib/plans";
 import { getPlan } from "@/lib/plan-config";
+import { rewardReferrer } from "@/lib/referrals";
 
 export interface FulfilInput {
   provider: "paystack" | "nowpayments";
@@ -67,6 +68,7 @@ export async function fulfilPayment(i: FulfilInput, d: DB = db()): Promise<Fulfi
     }
     await notify(tx, i.userId, "payment_success", "Payment received", `${p.label} is active. Thanks!`);
     if (p.kind !== "topup") await notify(tx, i.userId, "plan_change", "Plan updated", `You're on ${p.plan}.`);
+    await rewardReferrer(tx, i.userId, p.kind);
     await tx.insert(auditLog).values({ actorId: "system", action: "payment.fulfilled", target: i.userId, meta: { reference: i.reference, product: i.product, provider: i.provider } });
     return "applied";
   });

@@ -65,3 +65,14 @@ export function expectedPrice(product: ProductId): { amountMinor: number; curren
 export const LOW_CREDIT_RATIO = 0.1;
 export const HEARTBEAT_SECONDS = 10;
 export const STALE_AFTER_SECONDS = 30;
+
+/** Referral program. The referrer is rewarded once, when the friend first pays for Pro or Lifetime. */
+export const REFERRAL = {
+  rewardCredits: 600, // 10 minutes of live video, purchased bucket (never expires)
+  rewardKinds: ["subscription", "lifetime"] as const, // top-ups don't count: too cheap to farm
+  maxRewardsPerReferrer: 20,
+  claimWindowDays: 7, // the friend must claim within this long of signing up
+  cookie: "altrcam_ref",
+  cookieDays: 30,
+  codePattern: /^[a-f0-9]{8}$/,
+};

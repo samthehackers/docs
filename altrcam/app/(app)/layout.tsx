@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { cookies } from "next/headers";
 import { UserButton } from "@clerk/nextjs";
 import { Logo } from "@/components/logo";
 import { NotificationBell } from "@/components/notification-bell";
@@ -6,14 +7,22 @@ import { requireAppUser } from "@/lib/session-user";
 import { db } from "@/lib/db";
 import { listNotifications, unreadCount } from "@/lib/notifications";
 import { isAdmin } from "@/lib/api";
+import { claimReferral } from "@/lib/referrals";
+import { REFERRAL } from "@/lib/plans";
 
 const nav = [
   ["Dashboard", "/dashboard"], ["Studio", "/studio"], ["History", "/history"],
-  ["Presets", "/presets"], ["Billing", "/billing"], ["Support", "/support"], ["Settings", "/settings"],
+  ["Presets", "/presets"], ["Referrals", "/referrals"], ["Billing", "/billing"], ["Support", "/support"], ["Settings", "/settings"],
 ] as const;
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const user = await requireAppUser();
+
+  // Attribute a referral from the cookie set by /?ref=. Cheap no-op unless the account is new and unclaimed.
+  const refCode = (await cookies()).get(REFERRAL.cookie)?.value;
+  if (refCode && !user.referredBy && Date.now() - user.createdAt.getTime() <= REFERRAL.claimWindowDays * 86_400_000) {
+    await claimReferral(db(), user.id, refCode).catch((e) => console.error("[referral] claim failed", e));
+  }
   const [items, unread, admin] = await Promise.all([listNotifications(db(), user.id), unreadCount(db(), user.id), isAdmin(user.id)]);
   return (
     <div className="flex min-h-screen flex-col">

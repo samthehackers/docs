@@ -7,6 +7,7 @@ import { getPlan } from "@/lib/plan-config";
 import { deleteUserFiles } from "@/lib/storage";
 import { getProvider } from "@/lib/payments";
 import { clerkClient } from "@clerk/nextjs/server";
+import { purgeReferrals } from "@/lib/referrals";
 
 export interface ProfileInput { id: string; email: string; name: string; avatarUrl?: string | null }
 
@@ -42,6 +43,7 @@ export async function deleteAccount(userId: string, opts: { deleteClerk: boolean
   await deleteUserFiles(userId).catch((e) => console.error("[delete] storage", e));
   await d.transaction(async (tx) => {
     await tx.update(payments).set({ userId: null, raw: null }).where(eq(payments.userId, userId));
+    await purgeReferrals(tx, userId);
     await tx.delete(notifications).where(eq(notifications.userId, userId));
     await tx.delete(supportTickets).where(eq(supportTickets.userId, userId));
     await tx.delete(transformations).where(eq(transformations.userId, userId));

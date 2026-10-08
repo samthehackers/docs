@@ -70,13 +70,24 @@ The project exists: **`altrcam`**, team *TrustGeeks Security lnc teams* (`geeeks
 | Install / Build / Output | defaults (`npm install`, `next build`, `.next`) |
 | Ignored Build Step | `git diff --quiet HEAD^ HEAD -- .` (builds only when `altrcam/` changed, so docs commits don't trigger it) |
 | Vercel Authentication | currently "all except custom domains": previews are private, the production domain is public. Decide whether you want that |
-| Crons | read from `altrcam/vercel.json`: monthly refill, stale-session sweep **every 5 min** (needs a paid plan), daily retention. Check your plan allows the 300 s function limit set on the refill/retention routes |
+| Crons | read from `altrcam/vercel.json`: monthly refill and daily retention only (both fine on Hobby). The **5-minute stale-session sweep is not a Vercel cron**: it runs from GitHub Actions, see section 4b. Check your plan allows the 300 s function limit set on the refill/retention routes |
 | Domains | add `altrcam.com` and `altrcam.ai` (the app redirects `.ai` to `.com`) |
 | Region | pick the one closest to your Supabase region |
 
 **Environment variables:** add every variable above in *Settings → Environment Variables*. Use **different values per environment**: Preview gets the Clerk *development* instance and Paystack **test** keys; only Production gets live ones. `NEXT_PUBLIC_*` values are baked in at build time, so **redeploy after changing them**.
 
 The app builds and serves public pages even with none of them set. `GET /api/health` on the deployed URL shows which integrations it considers configured (booleans only), a quick way to see what's still missing.
+
+## 4b. Turn on the stale-session sweep (GitHub Actions)
+
+Vercel's Hobby plan only allows daily crons (Vercel's documented limit; not tried here), so `.github/workflows/altrcam-sweep.yml` calls `/api/cron/stale-sessions` every 5 minutes instead. It is **skipped until you opt in**:
+
+- [ ] GitHub repo → Settings → Secrets and variables → Actions → **Variables**: `ALTRCAM_URL` = the https URL of the deployment (e.g. `https://altrcam.com`).
+- [ ] Same page → **Secrets**: `CRON_SECRET` = exactly the value of `CRON_SECRET` in Vercel's Production environment.
+- [ ] Actions tab → *AltrCam stale-session sweep* → **Run workflow** once. A green run logs `ok (HTTP 200): {"closed":N}`. A red run saying "rejected" means the secrets differ.
+- [ ] Check the Actions tab again after ~15 minutes: a run with event `schedule` should have appeared. **This repo is a fork**, and I believe GitHub does not run scheduled workflows on forks until you enable them there. Not verified.
+- Scheduled runs can be delayed or skipped under load (read "5 min" as roughly 5-15), and GitHub pauses schedules on a public repo after 60 days without activity. Billing does not depend on the sweep (heartbeats bill), but abandoned sessions stay open until it runs.
+- The same workflow can run `refill` or `retention` by hand if a Vercel cron ever misses a day.
 
 ## 5. Merge and deploy to a preview first
 Push a branch or open a PR; Vercel builds a preview. Open it, check `/api/health`, then run sections 6-8 against the preview URL.
@@ -115,7 +126,7 @@ Also compare what fal actually **bills** for that session against the credits th
 - [ ] **Email + password sign-up**: verification email arrives; reset-password works; 2FA can be enabled in Settings; Settings → Security (Clerk) lists your signed-in devices and lets you revoke each one. Clerk has no single "sign out everywhere" button, so don't promise one.
 - [ ] **Studio**: go live, credits count down, Stop ends the session (`studio_sessions.ended_at` set, `seconds_billed` ≈ what you watched).
 - [ ] **Cut-off at zero**: as admin, revoke credits down to ~15, go live, confirm the session stops by itself and `/studio` then says "out of credits".
-- [ ] **Close the tab mid-session**: within ~5 min the stale-sweep cron closes it (`end_reason = stale`).
+- [ ] **Close the tab mid-session**: within ~5-15 min the GitHub Actions stale sweep (section 4b) closes it (`end_reason = stale`).
 - [ ] **Pay with Paystack (test card)**: success page confirms; `payments` row `success`; plan PRO; credits reset to the Pro allowance; receipt email.
 - [ ] **Replay that webhook** from Paystack's dashboard: balance does **not** change again.
 - [ ] **Top-up** lands in the purchased bucket and survives a monthly refill.

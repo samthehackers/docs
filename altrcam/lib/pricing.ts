@@ -7,3 +7,6 @@ export function priceLabel(p: ProductId): string {
   if (!Number.isFinite(v) || v <= 0) return "—";
   return money(v, process.env.PRICE_CURRENCY ?? "NGN");
 }
+
+/** Prices are owner-configurable placeholders until PRICING_APPROVED=true. */
+export const pricesApproved = () => process.env.PRICING_APPROVED === "true";

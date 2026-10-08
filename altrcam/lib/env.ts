@@ -46,3 +46,9 @@ export function env(): Env {
   cached = parsed.data;
   return cached;
 }
+
+/** Names of missing/invalid variables (never values). Empty when everything validates. */
+export function envIssues(source: NodeJS.ProcessEnv = process.env): string[] {
+  const parsed = schema.safeParse(source);
+  return parsed.success ? [] : [...new Set(parsed.error.issues.map((i) => i.path.join(".")))];
+}

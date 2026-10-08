@@ -29,9 +29,9 @@ const json = (res: http.ServerResponse, code: number, body: unknown) => { res.wr
 
 function run(args: string[] = [], env: Record<string, string | undefined> = {}) {
   return new Promise<{ code: number; out: string; err: string }>((resolve) => {
-    const e = { PATH: process.env.PATH, SWEEP_RETRY_DELAY: "0", ALTRCAM_URL: base, CRON_SECRET: SECRET, ...env } as Record<string, string>;
+    const e: Record<string, string | undefined> = { PATH: process.env.PATH, SWEEP_RETRY_DELAY: "0", ALTRCAM_URL: base, CRON_SECRET: SECRET, ...env };
     for (const k of Object.keys(e)) if (e[k] === undefined) delete e[k];
-    execFile("bash", [SCRIPT, ...args], { env: e, timeout: 30_000 }, (error, stdout, stderr) => {
+    execFile("bash", [SCRIPT, ...args], { env: e as NodeJS.ProcessEnv, timeout: 30_000 }, (error, stdout, stderr) => {
       resolve({ code: error ? ((error as { code?: number }).code ?? 1) : 0, out: stdout, err: stderr });
     });
   });

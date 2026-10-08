@@ -2,7 +2,7 @@ import Link from "next/link";
 import { Sparkles, Shirt, ImageIcon, Wand2, Zap, ShieldCheck } from "lucide-react";
 import { buttonClass } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { PLANS } from "@/lib/plans";
+import { getPlan } from "@/lib/plan-config";
 
 export const metadata = { title: { absolute: "AltrCam — Be anyone. Live." } };
 
@@ -13,7 +13,8 @@ const features = [
   { icon: Wand2, title: "Anime to oil paint", body: "One tap style presets, or write your own prompt." },
 ];
 
-export default function Landing() {
+export default async function Landing() {
+  const free = await getPlan("FREE");
   return (
     <>
       <section className="relative overflow-hidden">
@@ -29,7 +30,7 @@ export default function Landing() {
             <Link href="/sign-up" className={buttonClass({ variant: "gradient", size: "lg" })}>Try it free</Link>
             <Link href="/pricing" className={buttonClass({ variant: "outline", size: "lg" })}>See pricing</Link>
           </div>
-          <p className="mt-4 text-sm text-muted-foreground">{PLANS.FREE.monthlyCredits} free credits every month. No card needed.</p>
+          <p className="mt-4 text-sm text-muted-foreground">{free.monthlyCredits} free credits every month. No card needed.</p>
         </div>
       </section>
 

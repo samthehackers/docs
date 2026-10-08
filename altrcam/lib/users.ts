@@ -3,7 +3,7 @@ import { randomBytes } from "node:crypto";
 import { db, type DB } from "@/lib/db";
 import { users, payments, subscriptions, creditLedger, studioSessions, transformations, presets, notifications, supportTickets } from "@/db/schema";
 import { grantCredits } from "@/lib/credits";
-import { SIGNUP_CREDITS } from "@/lib/plans";
+import { getPlan } from "@/lib/plan-config";
 import { deleteUserFiles } from "@/lib/storage";
 import { getProvider } from "@/lib/payments";
 import { clerkClient } from "@clerk/nextjs/server";
@@ -12,12 +12,13 @@ export interface ProfileInput { id: string; email: string; name: string; avatarU
 
 /** Idempotent: inserts the user once and grants signup credits once. */
 export async function provisionUser(p: ProfileInput, d: DB = db()) {
+  const signupCredits = (await getPlan("FREE", d)).monthlyCredits; // follows the admin-configured FREE allowance
   return d.transaction(async (tx) => {
     const inserted = await tx.insert(users).values({
       id: p.id, email: p.email, name: p.name, avatarUrl: p.avatarUrl ?? null,
       referralCode: randomBytes(4).toString("hex"),
     }).onConflictDoNothing().returning({ id: users.id });
-    if (inserted.length) await grantCredits(tx, p.id, SIGNUP_CREDITS, "monthly", "signup_grant", { type: "signup", id: p.id });
+    if (inserted.length && signupCredits > 0) await grantCredits(tx, p.id, signupCredits, "monthly", "signup_grant", { type: "signup", id: p.id });
     return inserted.length > 0;
   });
 }

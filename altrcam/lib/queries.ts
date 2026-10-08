@@ -2,11 +2,12 @@ import { and, count, desc, eq, gte, sql } from "drizzle-orm";
 import { creditLedger, studioSessions, transformations, users } from "@/db/schema";
 import { db } from "@/lib/db";
 import { ledgerBalance } from "@/lib/credits";
-import { PLANS } from "@/lib/plans";
+import { getPlan } from "@/lib/plan-config";
+import type { Plan } from "@/lib/plans";
 
 export const monthStart = (d = new Date()) => new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1));
 
-export async function dashboardData(userId: string, plan: keyof typeof PLANS) {
+export async function dashboardData(userId: string, plan: Plan) {
   const d = db();
   const since = monthStart();
   const [bal, sessions, used, recent] = await Promise.all([
@@ -16,7 +17,7 @@ export async function dashboardData(userId: string, plan: keyof typeof PLANS) {
       .where(and(eq(creditLedger.userId, userId), eq(creditLedger.reason, "session"), gte(creditLedger.createdAt, since))),
     d.select().from(transformations).where(eq(transformations.userId, userId)).orderBy(desc(transformations.createdAt)).limit(6),
   ]);
-  const allowance = PLANS[plan].monthlyCredits;
+  const allowance = (await getPlan(plan)).monthlyCredits;
   const usedSeconds = used[0]?.s ?? 0;
   return {
     balance: bal,

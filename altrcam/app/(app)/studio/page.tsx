@@ -7,7 +7,7 @@ import { requireAppUser } from "@/lib/session-user";
 import { db } from "@/lib/db";
 import { ledgerBalance } from "@/lib/credits";
 import { presets, transformations } from "@/db/schema";
-import { PLANS } from "@/lib/plans";
+import { getPlans } from "@/lib/plan-config";
 import { BUILTIN_PRESETS, type PresetKind } from "@/lib/studio-presets";
 
 export const metadata = { title: "Studio" };
@@ -16,6 +16,7 @@ export const dynamic = "force-dynamic";
 export default async function StudioPage({ searchParams }: { searchParams: Promise<{ reuse?: string; preset?: string }> }) {
   const user = await requireAppUser();
   const sp = await searchParams;
+  const plans = await getPlans();
   const [bal, mine] = await Promise.all([
     ledgerBalance(db(), user.id),
     db().select().from(presets).where(eq(presets.userId, user.id)).orderBy(desc(presets.createdAt)),
@@ -26,7 +27,7 @@ export default async function StudioPage({ searchParams }: { searchParams: Promi
     return (
       <Card className="mx-auto max-w-lg py-12 text-center">
         <h1 className="text-2xl font-bold">You're out of credits</h1>
-        <p className="mt-2 text-muted-foreground">Upgrade to Pro for {PLANS.PRO.monthlyCredits.toLocaleString()} credits a month, or grab a top-up pack. Free credits refill on the 1st.</p>
+        <p className="mt-2 text-muted-foreground">Upgrade to Pro for {plans.PRO.monthlyCredits.toLocaleString()} credits a month, or grab a top-up pack. Free credits refill on the 1st.</p>
         <Link href="/billing" className={buttonClass({ variant: "gradient", size: "lg", className: "mt-6" })}>See options</Link>
       </Card>
     );
@@ -47,7 +48,7 @@ export default async function StudioPage({ searchParams }: { searchParams: Promi
     if (m) initial = { prompt: m.prompt, enablePromptExpansion: true, kind: m.kind as PresetKind, referencePath: m.imagePath };
   }
 
-  const plan = PLANS[user.plan];
+  const plan = plans[user.plan];
   return (
     <div className="space-y-4">
       <h1 className="text-3xl font-bold">Studio</h1>

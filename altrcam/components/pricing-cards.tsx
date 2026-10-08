@@ -1,7 +1,7 @@
 import { Check } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { PLANS, PRODUCTS, type ProductId } from "@/lib/plans";
+import { PRODUCTS, type Plan, type PlanConfig, type ProductId } from "@/lib/plans";
 import { priceLabel } from "@/lib/pricing";
 import { fmtNum } from "@/lib/utils";
 
@@ -17,11 +17,11 @@ export function tiers(): Tier[] {
   ];
 }
 
-export function PricingCards({ renderCta, current }: { renderCta: (t: Tier) => React.ReactNode; current?: string }) {
+export function PricingCards({ plans, renderCta, current }: { plans: Record<Plan, PlanConfig>; renderCta: (t: Tier) => React.ReactNode; current?: string }) {
   return (
     <div className="grid gap-4 md:grid-cols-3">
       {tiers().map((t) => {
-        const p = PLANS[t.key];
+        const p = plans[t.key];
         return (
           <Card key={t.key} className={t.highlight ? "border-primary glow" : ""}>
             <div className="flex items-center justify-between">

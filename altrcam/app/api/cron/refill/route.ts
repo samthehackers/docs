@@ -4,7 +4,7 @@ import { handle, requireCron } from "@/lib/api";
 import { db } from "@/lib/db";
 import { users } from "@/db/schema";
 import { refillApplied, resetMonthly } from "@/lib/credits";
-import { PLANS } from "@/lib/plans";
+import { getPlans } from "@/lib/plan-config";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -13,11 +13,12 @@ export const maxDuration = 300;
 export const GET = handle(async (req: Request) => {
   requireCron(req);
   const period = new Date().toISOString().slice(0, 7);
+  const plans = await getPlans();
   const all = await db().select({ id: users.id, plan: users.plan }).from(users).where(isNull(users.deletedAt));
   let refilled = 0;
   for (const u of all) {
     if (await refillApplied(db(), u.id, period)) continue;
-    await db().transaction((tx) => resetMonthly(tx, u.id, PLANS[u.plan].monthlyCredits, period));
+    await db().transaction((tx) => resetMonthly(tx, u.id, plans[u.plan].monthlyCredits, period));
     refilled++;
   }
   return NextResponse.json({ period, refilled });

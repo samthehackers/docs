@@ -3,8 +3,10 @@ import { desc } from "drizzle-orm";
 import { Card, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { CreditForm, PlanForm, TicketReply } from "@/components/admin/forms";
+import { PlanLimitsForm } from "@/components/admin/plan-limits-form";
 import { db } from "@/lib/db";
-import { auditLog, payments, studioSessions, supportTickets, webhookEvents } from "@/db/schema";
+import { auditLog, payments, planConfig, studioSessions, supportTickets, webhookEvents } from "@/db/schema";
+import { getPlans } from "@/lib/plan-config";
 import { kpis, productLabel, searchUsers, userDetail } from "@/lib/admin";
 import { ledgerBalance } from "@/lib/credits";
 import { money, relativeTime } from "@/lib/utils";
@@ -12,7 +14,7 @@ import { money, relativeTime } from "@/lib/utils";
 export const metadata = { title: "Admin" };
 export const dynamic = "force-dynamic";
 
-const TABS = ["overview", "users", "payments", "sessions", "tickets", "webhooks", "audit"] as const;
+const TABS = ["overview", "users", "plans", "payments", "sessions", "tickets", "webhooks", "audit"] as const;
 
 export default async function Admin({ searchParams }: { searchParams: Promise<{ tab?: string; q?: string; user?: string }> }) {
   const sp = await searchParams;
@@ -24,6 +26,7 @@ export default async function Admin({ searchParams }: { searchParams: Promise<{ 
       </nav>
       {tab === "overview" && <Overview />}
       {tab === "users" && <Users q={sp.q ?? ""} userId={sp.user} />}
+      {tab === "plans" && <PlanLimits />}
       {tab === "payments" && <Payments />}
       {tab === "sessions" && <Sessions />}
       {tab === "tickets" && <Tickets />}
@@ -112,4 +115,17 @@ async function Webhooks() {
 async function Audit() {
   const rows = await db().select().from(auditLog).orderBy(desc(auditLog.createdAt)).limit(100);
   return <Table head={["When", "Actor", "Action", "Target", "Meta"]}>{rows.map((a) => <tr key={a.id}><td className="p-3">{relativeTime(a.createdAt)}</td><td className="p-3 text-xs">{a.actorId}</td><td className="p-3">{a.action}</td><td className="p-3 text-xs">{a.target}</td><td className="p-3 font-mono text-xs">{JSON.stringify(a.meta)}</td></tr>)}</Table>;
+}
+
+async function PlanLimits() {
+  const [plans, rows] = await Promise.all([getPlans(db()), db().select({ plan: planConfig.plan }).from(planConfig)]);
+  const custom = new Set(rows.map((r) => r.plan));
+  return (
+    <div className="space-y-6">
+      <p className="text-sm text-muted-foreground">Changes apply to new sessions, refills and purchases within about 15 seconds and are written to the audit log. Lowering a limit doesn't remove anything a user already has. Prices are set separately in environment variables.</p>
+      {(["FREE", "PRO", "LIFETIME"] as const).map((k) => (
+        <Card key={k}><PlanLimitsForm plan={k} label={plans[k].label} customised={custom.has(k)} value={{ monthlyCredits: plans[k].monthlyCredits, maxSessionSeconds: plans[k].maxSessionSeconds, maxResolution: plans[k].maxResolution, presets: plans[k].presets, historyDays: plans[k].historyDays, clipRecording: plans[k].clipRecording }} /></Card>
+      ))}
+    </div>
+  );
 }

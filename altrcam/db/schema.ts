@@ -140,3 +140,16 @@ export const auditLog = pgTable("audit_log", {
   meta: jsonb("meta"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+/** Admin overrides for plan limits. A missing row means "use the defaults in lib/plans.ts". */
+export const planConfig = pgTable("plan_config", {
+  plan: planEnum("plan").primaryKey(),
+  monthlyCredits: integer("monthly_credits").notNull(),
+  maxSessionSeconds: integer("max_session_seconds").notNull(),
+  maxResolution: text("max_resolution").notNull(), // low | high
+  presets: integer("presets").notNull(),
+  historyDays: integer("history_days"), // null = keep forever
+  clipRecording: boolean("clip_recording").notNull(),
+  updatedBy: text("updated_by").notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});

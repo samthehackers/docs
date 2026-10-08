@@ -6,7 +6,8 @@ import { CancelButton, CheckoutButton } from "@/components/billing/checkout-butt
 import { requireAppUser } from "@/lib/session-user";
 import { db } from "@/lib/db";
 import { payments, subscriptions } from "@/db/schema";
-import { PLANS, PRODUCTS, type ProductId } from "@/lib/plans";
+import { PRODUCTS, type ProductId } from "@/lib/plans";
+import { getPlans } from "@/lib/plan-config";
 import { priceLabel } from "@/lib/pricing";
 import { money } from "@/lib/utils";
 
@@ -15,6 +16,7 @@ export const dynamic = "force-dynamic";
 
 export default async function Billing() {
   const user = await requireAppUser();
+  const plans = await getPlans();
   const [hist, [sub]] = await Promise.all([
     db().select().from(payments).where(eq(payments.userId, user.id)).orderBy(desc(payments.createdAt)).limit(50),
     db().select().from(subscriptions).where(and(eq(subscriptions.userId, user.id), eq(subscriptions.status, "active"))).limit(1),
@@ -26,7 +28,7 @@ export default async function Billing() {
       <Card className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <p className="text-sm text-muted-foreground">Current plan</p>
-          <p className="text-2xl font-bold">{PLANS[user.plan].label} <Badge className="ml-2 align-middle">{user.planStatus}</Badge></p>
+          <p className="text-2xl font-bold">{plans[user.plan].label} <Badge className="ml-2 align-middle">{user.planStatus}</Badge></p>
           {user.plan === "PRO" && user.planRenewsAt && <p className="text-sm text-muted-foreground">{sub ? "Renews" : "Ends"} {user.planRenewsAt.toLocaleDateString("en", { dateStyle: "medium" })}</p>}
           {user.plan === "LIFETIME" && <p className="text-sm text-muted-foreground">Yours forever.</p>}
         </div>
@@ -36,7 +38,7 @@ export default async function Billing() {
       {user.plan !== "LIFETIME" && (
         <section>
           <h2 className="mb-4 text-xl font-semibold">Plans</h2>
-          <PricingCards current={user.plan} renderCta={(t) => {
+          <PricingCards plans={plans} current={user.plan} renderCta={(t) => {
             if (!t.product) return <p className="text-sm text-muted-foreground">{user.plan === "FREE" ? "Your current plan" : "Downgrade by cancelling above"}</p>;
             if (t.key === "PRO") return (
               <div className="space-y-2">

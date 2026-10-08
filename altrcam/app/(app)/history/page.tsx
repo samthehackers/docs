@@ -7,7 +7,7 @@ import { HistoryActions } from "@/components/history-actions";
 import { requireAppUser } from "@/lib/session-user";
 import { db } from "@/lib/db";
 import { transformations } from "@/db/schema";
-import { PLANS } from "@/lib/plans";
+import { getPlan } from "@/lib/plan-config";
 import { signedReadUrl } from "@/lib/storage";
 import { relativeTime } from "@/lib/utils";
 
@@ -20,7 +20,7 @@ export default async function History({ searchParams }: { searchParams: Promise<
   const user = await requireAppUser();
   const sp = await searchParams;
   const page = Math.max(1, Number(sp.page) || 1);
-  const days = PLANS[user.plan].historyDays;
+  const days = (await getPlan(user.plan)).historyDays;
   const conds = [eq(transformations.userId, user.id)];
   if (days) conds.push(gte(transformations.createdAt, new Date(Date.now() - days * 86_400_000)));
   if (sp.type && TYPES.includes(sp.type)) conds.push(eq(transformations.type, sp.type));

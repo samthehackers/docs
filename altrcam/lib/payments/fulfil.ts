@@ -5,6 +5,7 @@ import { grantCredits, resetMonthly } from "@/lib/credits";
 import { notify, userEmailIfEnabled } from "@/lib/notifications";
 import { sendEmail, esc } from "@/lib/email";
 import { PRODUCTS, type ProductId } from "@/lib/plans";
+import { getPlan } from "@/lib/plan-config";
 
 export interface FulfilInput {
   provider: "paystack" | "nowpayments";
@@ -29,6 +30,8 @@ const period = (d = new Date()) => d.toISOString().slice(0, 7);
  */
 export async function fulfilPayment(i: FulfilInput, d: DB = db()): Promise<FulfilResult> {
   const p = PRODUCTS[i.product];
+  // Plan purchases grant the effective (admin-configurable) monthly allowance, not a hard-coded number.
+  const allowance = p.plan ? (await getPlan(p.plan, d)).monthlyCredits : p.credits;
   const result = await d.transaction(async (tx): Promise<FulfilResult> => {
     const ev = await tx.insert(webhookEvents)
       .values({ provider: i.provider, eventId: i.eventId, type: i.eventType, payload: i.payload as object })
@@ -51,7 +54,7 @@ export async function fulfilPayment(i: FulfilInput, d: DB = db()): Promise<Fulfi
     } else if (p.kind === "lifetime") {
       await tx.update(users).set({ plan: "LIFETIME", planStatus: "active", planRenewsAt: null }).where(eq(users.id, i.userId));
       await tx.update(subscriptions).set({ status: "cancelled" }).where(and(eq(subscriptions.userId, i.userId), eq(subscriptions.status, "active")));
-      await resetMonthly(tx, i.userId, p.credits, `pay:${i.reference}`);
+      await resetMonthly(tx, i.userId, allowance, `pay:${i.reference}`);
     } else {
       const end = i.sub?.periodEnd ?? new Date(now.getTime() + (p.periodDays ?? 31) * DAY);
       await tx.update(users).set({ plan: p.plan!, planStatus: "active", planRenewsAt: end }).where(eq(users.id, i.userId));
@@ -60,7 +63,7 @@ export async function fulfilPayment(i: FulfilInput, d: DB = db()): Promise<Fulfi
           .values({ userId: i.userId, provider: i.provider, providerSubId: i.sub.id, emailToken: i.sub.emailToken, plan: p.plan!, status: "active", currentPeriodEnd: end })
           .onConflictDoUpdate({ target: [subscriptions.provider, subscriptions.providerSubId], set: { status: "active", currentPeriodEnd: end, cancelAt: null } });
       }
-      await resetMonthly(tx, i.userId, p.credits, `pay:${i.reference}`);
+      await resetMonthly(tx, i.userId, allowance, `pay:${i.reference}`);
     }
     await notify(tx, i.userId, "payment_success", "Payment received", `${p.label} is active. Thanks!`);
     if (p.kind !== "topup") await notify(tx, i.userId, "plan_change", "Plan updated", `You're on ${p.plan}.`);

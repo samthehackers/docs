@@ -8,6 +8,7 @@ import { db } from "@/lib/db";
 import { listNotifications, unreadCount } from "@/lib/notifications";
 import { isAdmin } from "@/lib/api";
 import { claimReferral } from "@/lib/referrals";
+import { parseRefCookie } from "@/lib/referral-cookie";
 import { REFERRAL } from "@/lib/plans";
 
 const nav = [
@@ -18,10 +19,12 @@ const nav = [
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const user = await requireAppUser();
 
-  // Attribute a referral from the cookie set by /?ref=. Cheap no-op unless the account is new and unclaimed.
-  const refCode = (await cookies()).get(REFERRAL.cookie)?.value;
-  if (refCode && !user.referredBy && Date.now() - user.createdAt.getTime() <= REFERRAL.claimWindowDays * 86_400_000) {
-    await claimReferral(db(), user.id, refCode).catch((e) => console.error("[referral] claim failed", e));
+  // Attribute a referral from the cookie set by /?ref=. Only runs for a brand-new, unclaimed account (one
+  // indexed lookup on document loads in that first day); claimReferral re-checks everything. The cookie can't
+  // be cleared from a server component, so it lingers harmlessly once the account is claimed or too old.
+  const ref = parseRefCookie((await cookies()).get(REFERRAL.cookie)?.value);
+  if (ref && !user.referredBy && Date.now() - user.createdAt.getTime() <= REFERRAL.claimWindowDays * 86_400_000) {
+    await claimReferral(db(), user.id, ref.code, { clickedAt: ref.clickedAt }).catch((e) => console.error("[referral] claim failed", e));
   }
   const [items, unread, admin] = await Promise.all([listNotifications(db(), user.id), unreadCount(db(), user.id), isAdmin(user.id)]);
   return (

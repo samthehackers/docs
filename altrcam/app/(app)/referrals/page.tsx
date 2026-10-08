@@ -48,7 +48,7 @@ export default async function Referrals() {
           <li>When they make their first Pro or Lifetime payment, the credits land in your account. They never expire.</li>
           <li>Top-up packs don't count. Each friend can only be rewarded once.</li>
           <li>You can earn rewards for up to {REFERRAL.maxRewardsPerReferrer} friends ({stats.remainingRewards} left).</li>
-          <li>Referring yourself or your own other accounts isn't allowed.</li>
+          <li>Referring yourself doesn't earn rewards, and we may remove rewards we find were gained by abusing the program.</li>
         </ul>
       </Card>
     </div>

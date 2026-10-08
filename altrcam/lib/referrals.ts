@@ -9,13 +9,14 @@ const DAY = 86_400_000;
 
 export type ClaimResult =
   | { status: "claimed" }
-  | { status: "ignored"; reason: "bad_code" | "unknown_code" | "self" | "already_referred" | "too_late" | "already_paid" | "no_user" };
+  | { status: "ignored"; reason: "bad_code" | "unknown_code" | "self" | "cycle" | "already_referred" | "too_late" | "signed_up_before_click" | "already_paid" | "no_user" };
 
 /**
  * Attach `userId` to the owner of `code`. Idempotent and conservative: only a brand-new account that
  * hasn't paid yet can be claimed, and never by itself. Safe to call on every page load.
  */
-export async function claimReferral(d: DB, userId: string, code: string, now = new Date()): Promise<ClaimResult> {
+export async function claimReferral(d: DB, userId: string, code: string, opts: { now?: Date; clickedAt?: Date } = {}): Promise<ClaimResult> {
+  const now = opts.now ?? new Date();
   if (!REFERRAL.codePattern.test(code)) return { status: "ignored", reason: "bad_code" };
   return d.transaction(async (tx): Promise<ClaimResult> => {
     // Lock the friend's row so two concurrent loads can't both claim.
@@ -24,10 +25,14 @@ export async function claimReferral(d: DB, userId: string, code: string, now = n
     if (!me || me.deletedAt) return { status: "ignored", reason: "no_user" };
     if (me.referredBy) return { status: "ignored", reason: "already_referred" };
     if (now.getTime() - me.createdAt.getTime() > REFERRAL.claimWindowDays * DAY) return { status: "ignored", reason: "too_late" };
+    // The account must have been created after the link was clicked (small grace for clock skew), so an
+    // existing account can't be attributed by someone later opening a link.
+    if (opts.clickedAt && me.createdAt.getTime() < opts.clickedAt.getTime() - 5 * 60_000) return { status: "ignored", reason: "signed_up_before_click" };
 
-    const [referrer] = await tx.select({ id: users.id, deletedAt: users.deletedAt }).from(users).where(eq(users.referralCode, code));
+    const [referrer] = await tx.select({ id: users.id, deletedAt: users.deletedAt, referredBy: users.referredBy }).from(users).where(eq(users.referralCode, code));
     if (!referrer || referrer.deletedAt) return { status: "ignored", reason: "unknown_code" };
     if (referrer.id === userId) return { status: "ignored", reason: "self" };
+    if (referrer.referredBy === userId) return { status: "ignored", reason: "cycle" }; // A referred by B and B by A
 
     const [paid] = await tx.select({ n: count() }).from(payments).where(and(eq(payments.userId, userId), eq(payments.status, "success")));
     if ((paid?.n ?? 0) > 0) return { status: "ignored", reason: "already_paid" };
@@ -81,8 +86,13 @@ export async function referralStats(d: DB, userId: string) {
   };
 }
 
-/** Account deletion: drop referral links in both directions (credits already granted stay in the ledger until it is purged). */
+/**
+ * Account deletion. Rows for a *rewarded* friend are kept with the friend detached (referred_id = NULL):
+ * deleting the account must not reset the referrer's reward cap or "credits earned". Unrewarded rows are
+ * deleted. Everything where the deleted user was the referrer goes, since they can't earn any more.
+ */
 export async function purgeReferrals(tx: Tx, userId: string) {
+  await tx.update(referrals).set({ referredId: null }).where(and(eq(referrals.referredId, userId), eq(referrals.status, "rewarded")));
   await tx.delete(referrals).where(eq(referrals.referredId, userId));
   await tx.delete(referrals).where(eq(referrals.referrerId, userId));
   await tx.update(users).set({ referredBy: null }).where(eq(users.referredBy, userId));

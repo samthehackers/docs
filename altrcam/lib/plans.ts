@@ -71,7 +71,7 @@ export const REFERRAL = {
   rewardCredits: 600, // 10 minutes of live video, purchased bucket (never expires)
   rewardKinds: ["subscription", "lifetime"] as const, // top-ups don't count: too cheap to farm
   maxRewardsPerReferrer: 20,
-  claimWindowDays: 7, // the friend must claim within this long of signing up
+  claimWindowDays: 1, // the friend must claim within this long of signing up (normally the first page load)
   cookie: "altrcam_ref",
   cookieDays: 30,
   codePattern: /^[a-f0-9]{8}$/,

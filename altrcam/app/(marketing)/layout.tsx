@@ -11,7 +11,9 @@ export default async function MarketingLayout({ children }: { children: React.Re
         <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-4">
           <Logo />
           <nav className="flex items-center gap-2 text-sm">
+            <Link href="/how-it-works" className="hidden px-3 py-2 text-muted-foreground hover:text-foreground sm:inline">How it works</Link>
             <Link href="/pricing" className="px-3 py-2 text-muted-foreground hover:text-foreground">Pricing</Link>
+            <Link href="/faq" className="hidden px-3 py-2 text-muted-foreground hover:text-foreground sm:inline">FAQ</Link>
             {userId ? (
               <Link href="/dashboard" className={buttonClass({ variant: "gradient", size: "sm" })}>Dashboard</Link>
             ) : (
@@ -25,6 +27,13 @@ export default async function MarketingLayout({ children }: { children: React.Re
       </header>
       <main className="flex-1">{children}</main>
       <footer className="border-t py-8 text-center text-xs text-muted-foreground">
+        <nav aria-label="Footer" className="mb-3 flex justify-center gap-4">
+          <Link href="/how-it-works" className="hover:text-foreground">How it works</Link>
+          <Link href="/faq" className="hover:text-foreground">FAQ</Link>
+          <Link href="/terms" className="hover:text-foreground">Terms</Link>
+          <Link href="/privacy" className="hover:text-foreground">Privacy</Link>
+          <Link href="/contact" className="hover:text-foreground">Contact</Link>
+        </nav>
         <p>© {new Date().getFullYear()} AltrCam · altrcam.com</p>
         <p className="mt-1">Powered by Lucy 2.5 from Decart</p>
       </footer>

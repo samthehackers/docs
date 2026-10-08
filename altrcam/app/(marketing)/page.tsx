@@ -6,6 +6,9 @@ import { getPlan } from "@/lib/plan-config";
 
 export const metadata = { title: { absolute: "AltrCam — Be anyone. Live." } };
 
+// Shows admin-edited plan limits: re-render at most once a minute instead of freezing the build-time values.
+export const revalidate = 60;
+
 const features = [
   { icon: Sparkles, title: "Become anyone", body: "Describe a character. Your face, their look, live on camera." },
   { icon: ImageIcon, title: "Swap your world", body: "Beach, boardroom, spaceship. Change the background with a sentence." },

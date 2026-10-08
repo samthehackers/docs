@@ -6,6 +6,9 @@ import { getPlans } from "@/lib/plan-config";
 
 export const metadata = { title: "Pricing" };
 
+// Shows admin-edited plan limits: re-render at most once a minute instead of freezing the build-time values.
+export const revalidate = 60;
+
 export default async function Pricing() {
   const plans = await getPlans();
   return (

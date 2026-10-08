@@ -1,0 +1,7 @@
+{
+  "crons": [
+    { "path": "/api/cron/refill", "schedule": "5 0 1 * *" },
+    { "path": "/api/cron/stale-sessions", "schedule": "*/5 * * * *" },
+    { "path": "/api/cron/retention", "schedule": "30 3 * * *" }
+  ]
+}

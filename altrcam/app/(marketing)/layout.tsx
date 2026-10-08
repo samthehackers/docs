@@ -1,0 +1,33 @@
+import Link from "next/link";
+import { auth } from "@clerk/nextjs/server";
+import { Logo } from "@/components/logo";
+import { buttonClass } from "@/components/ui/button";
+
+export default async function MarketingLayout({ children }: { children: React.ReactNode }) {
+  const { userId } = await auth();
+  return (
+    <div className="flex min-h-screen flex-col">
+      <header className="sticky top-0 z-30 border-b bg-background/80 backdrop-blur">
+        <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-4">
+          <Logo />
+          <nav className="flex items-center gap-2 text-sm">
+            <Link href="/pricing" className="px-3 py-2 text-muted-foreground hover:text-foreground">Pricing</Link>
+            {userId ? (
+              <Link href="/dashboard" className={buttonClass({ variant: "gradient", size: "sm" })}>Dashboard</Link>
+            ) : (
+              <>
+                <Link href="/sign-in" className="px-3 py-2 text-muted-foreground hover:text-foreground">Sign in</Link>
+                <Link href="/sign-up" className={buttonClass({ variant: "gradient", size: "sm" })}>Get started</Link>
+              </>
+            )}
+          </nav>
+        </div>
+      </header>
+      <main className="flex-1">{children}</main>
+      <footer className="border-t py-8 text-center text-xs text-muted-foreground">
+        <p>© {new Date().getFullYear()} AltrCam · altrcam.com</p>
+        <p className="mt-1">Powered by Lucy 2.5 from Decart</p>
+      </footer>
+    </div>
+  );
+}

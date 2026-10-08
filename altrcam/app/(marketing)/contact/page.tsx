@@ -10,7 +10,7 @@ export default function Contact() {
       <h1 className="text-4xl font-bold">Contact</h1>
       <p className="mt-4 text-muted-foreground">
         Email us at <a className="text-primary underline" href={`mailto:${email}`}>{email}</a>. Signed-in users can also open a ticket from{" "}
-        <Link href="/support" className="text-primary underline">Support</Link>.
+        <Link href="/support" prefetch={false} className="text-primary underline">Support</Link>.
       </p>
     </div>
   );

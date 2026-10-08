@@ -19,6 +19,7 @@ This was built in a sandbox with no network access to fal.ai, Clerk, Supabase, P
 
 ## Billing & product gaps
 - Stale sessions are billed to the last heartbeat, so a user who kills the tab right before a heartbeat can get up to ~10 s unbilled per session.
+- That only holds when the sweep runs. If a session is abandoned without a clean close (crash, network loss) and the sweep has not closed it, starting a new session closes the old one at the *current* time, so the user is billed the whole gap since the last heartbeat, capped at their plan's max session length (1800 s on Pro, minus what was already billed). Normal tab closes send a final request and are not affected. There is no dead-man's switch: nothing alerts you if the sweep stops running.
 - "Receipts" are an email plus the payment reference in Billing. There are no PDF invoices.
 - Crypto has no recurring billing; it is offered for Lifetime and top-ups. NOWPayments fiat price currency support (e.g. NGN) depends on your account; USD is the safe choice.
 - Paystack renewals arrive as `charge.success` with no pending row; they are resolved by plan code → product and the customer's email → user. The Paystack plan amount must equal `PRICE_PRO_*` or renewals are recorded as `rejected`.

@@ -31,7 +31,7 @@ Env is validated with Zod at boot in production (`lib/env.ts`, `instrumentation.
 | `NOWPAYMENTS_API_KEY`, `NOWPAYMENTS_IPN_SECRET` | Crypto |
 | `RESEND_API_KEY`, `EMAIL_FROM` | Receipts, low-credit alerts, ticket replies |
 | `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN` | Rate limiting |
-| `CRON_SECRET` | ≥16 chars. Vercel sends it as `Authorization: Bearer …` to cron routes |
+| `CRON_SECRET` | ≥16 chars. Vercel sends it as `Authorization: Bearer …` to cron routes. The GitHub Actions stale-session sweep needs the **same value as a repo secret** (`GO_LIVE.md` section 4b) |
 | `NEXT_PUBLIC_APP_URL` | e.g. `https://altrcam.com` |
 | `PRICE_CURRENCY` (`NGN`\|`USD`), `PRICE_*` | Prices **in minor units** (kobo/cents). Webhooks compare paid amounts against these |
 

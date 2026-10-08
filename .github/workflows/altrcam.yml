@@ -26,12 +26,20 @@ jobs:
       - run: npm run typecheck
       - run: npm run lint
       - run: npm test
-      # Public pages must build and render with no credentials at all (see lib/config.ts).
-      - name: Build with no credentials
-        run: npm run build
+      # Builds with NO credentials, then drives the public site in a real browser: responsive layout at
+      # 320/360/768/1280px, accessibility basics, security headers, honest 503/404/401 behaviour.
+      - run: npx playwright install --with-deps chromium
+      - name: Public site checks (no credentials)
+        run: npm run test:public
         env:
           NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ""
           CLERK_SECRET_KEY: ""
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: public-site-screenshots
+          path: altrcam/test-results/shots
+          if-no-files-found: ignore
 
   e2e:
     needs: check

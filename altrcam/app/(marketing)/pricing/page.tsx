@@ -13,13 +13,13 @@ export default function Pricing() {
       <div className="mt-8"><PricingNotice /></div>
       <div className="mt-4">
         <PricingCards renderCta={(t) => (
-          <Link href={t.product ? "/billing" : "/sign-up"} className={buttonClass({ variant: t.highlight ? "gradient" : "outline", className: "w-full" })}>
+          <Link href={t.product ? "/billing" : "/sign-up"} prefetch={t.product ? false : undefined} className={buttonClass({ variant: t.highlight ? "gradient" : "outline", className: "w-full" })}>
             {t.product ? "Choose " + t.key.toLowerCase() : "Start free"}
           </Link>
         )} />
       </div>
       <h2 className="mb-4 mt-16 text-xl font-semibold">Need more? Top up anytime.</h2>
-      <TopupList renderCta={() => <Link href="/billing" className={buttonClass({ variant: "outline", size: "sm" })}>Buy</Link>} />
+      <TopupList renderCta={() => <Link href="/billing" prefetch={false} className={buttonClass({ variant: "outline", size: "sm" })}>Buy</Link>} />
     </div>
   );
 }

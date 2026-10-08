@@ -32,7 +32,13 @@ export async function claimReferral(d: DB, userId: string, code: string, opts: {
     const [referrer] = await tx.select({ id: users.id, deletedAt: users.deletedAt, referredBy: users.referredBy }).from(users).where(eq(users.referralCode, code));
     if (!referrer || referrer.deletedAt) return { status: "ignored", reason: "unknown_code" };
     if (referrer.id === userId) return { status: "ignored", reason: "self" };
-    if (referrer.referredBy === userId) return { status: "ignored", reason: "cycle" }; // A referred by B and B by A
+    // Keep the referral graph acyclic (A<-B<-C<-A would also deadlock concurrent payments, which lock friend
+    // then referrer). Walk up the referrer's own chain; it is short, bounded and cycle-free by construction.
+    for (let hop = 0, cur: string | null = referrer.referredBy; cur && hop < 25; hop++) {
+      if (cur === userId) return { status: "ignored", reason: "cycle" };
+      const [up] = await tx.select({ referredBy: users.referredBy }).from(users).where(eq(users.id, cur));
+      cur = up?.referredBy ?? null;
+    }
 
     const [paid] = await tx.select({ n: count() }).from(payments).where(and(eq(payments.userId, userId), eq(payments.status, "success")));
     if ((paid?.n ?? 0) > 0) return { status: "ignored", reason: "already_paid" };
@@ -95,5 +101,7 @@ export async function purgeReferrals(tx: Tx, userId: string) {
   await tx.update(referrals).set({ referredId: null }).where(and(eq(referrals.referredId, userId), eq(referrals.status, "rewarded")));
   await tx.delete(referrals).where(eq(referrals.referredId, userId));
   await tx.delete(referrals).where(eq(referrals.referrerId, userId));
-  await tx.update(users).set({ referredBy: null }).where(eq(users.referredBy, userId));
+  // Deliberately NOT touching other users' rows (users.referred_by of friends): that would take row locks in the
+  // opposite order to payment fulfilment and can deadlock. referred_by has no FK; a dangling id is harmless
+  // because every check that reads it compares ids and the referrals table is the source of truth.
 }

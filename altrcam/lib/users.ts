@@ -42,6 +42,9 @@ export async function deleteAccount(userId: string, opts: { deleteClerk: boolean
   }
   await deleteUserFiles(userId).catch((e) => console.error("[delete] storage", e));
   await d.transaction(async (tx) => {
+    // Lock the user first (same order as payment fulfilment and referral claims) so deletion waits for an
+    // in-flight payment instead of deadlocking with it or hitting a foreign-key error mid-way.
+    await tx.execute(sql`select 1 from ${users} where ${users.id} = ${userId} for update`);
     await tx.update(payments).set({ userId: null, raw: null }).where(eq(payments.userId, userId));
     await purgeReferrals(tx, userId);
     await tx.delete(notifications).where(eq(notifications.userId, userId));

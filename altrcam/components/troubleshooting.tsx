@@ -100,10 +100,10 @@ export function troubleshootingItems(plans: Record<Plan, PlanConfig>): Troublesh
           <p>Start with the payment history on the <A href="/billing">Billing</A> page. Every payment is listed with a status:</p>
           <Ul>
             <li><b>success:</b> we received and verified the payment, and the plan or credits were applied.</li>
-            <li><b>pending:</b> checkout was started but not confirmed yet. Confirmation comes from the payment provider and can take a few minutes, so refresh the page before assuming anything is wrong.</li>
+            <li><b>pending:</b> checkout was started but not confirmed yet. Confirmation comes from the payment provider and can take a few minutes, so refresh the page before assuming anything is wrong. A pending row with no charge on your bank statement is a checkout that was started and not finished; you can ignore it.</li>
             <li><b>rejected:</b> the notice we received did not match the price we expect for that item, so nothing was granted. Send a ticket.</li>
           </Ul>
-          <p className="mt-2">If your bank shows a charge but Billing shows no success after you have waited, or a charge you did not expect, send a ticket with the payment reference if you have it (Billing shows it for successful payments, and your receipt email has it), plus the date, the amount, the email you paid with and what you bought. Never put a card number or password in a ticket.</p>
+          <p className="mt-2">If your bank shows a charge but Billing shows no success after you have waited, or a charge you did not expect, send a ticket with the payment reference if you have it (Billing shows it for successful payments, and if you receive receipt emails, the reference is in them), plus the date, the amount, the email you paid with and what you bought. Never put a card number or password in a ticket.</p>
           <Ul>
             <li><b>Charged twice.</b> Each checkout is its own payment with its own reference, so two successful rows are two real charges. A repeated notice from the provider for the same payment is applied only once. If your bank shows more charges than Billing does, send the details of each.</li>
             <li><b>Bought Lifetime while on Pro.</b> We ask the payment provider to stop the Pro subscription. If a Pro charge still arrives afterwards, your plan stays Lifetime and the charge can be reviewed for a refund. Contact support.</li>

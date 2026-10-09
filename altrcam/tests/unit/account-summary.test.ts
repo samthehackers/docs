@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   fmtDate, fmtDuration, fmtMonthYear, fmtSessionLimit, initials, isLowCredit, ledgerReasonLabel, planComparison, planStatusView, sessionEndLabel, usagePercent,
 } from "@/lib/account-summary";
-import { DEFAULT_PLANS } from "@/lib/plans";
+import { DEFAULT_PLANS, STALE_AFTER_SECONDS } from "@/lib/plans";
 
 const NOW = new Date("2026-03-10T12:00:00Z");
 const END = new Date("2026-03-20T00:00:00Z");
@@ -82,6 +82,16 @@ describe("sessionEndLabel", () => {
     expect(sessionEndLabel(null)).toMatch(/still open/i);
     expect(sessionEndLabel("whatever")).toBe("Ended");
   });
+  it("does not call a silent session 'still open': it stopped checking in", () => {
+    const secondsAgo = (s: number) => new Date(NOW.getTime() - s * 1000);
+    expect(sessionEndLabel(null, secondsAgo(5), NOW)).toBe("Still open");
+    expect(sessionEndLabel(null, secondsAgo(STALE_AFTER_SECONDS - 1), NOW)).toBe("Still open");
+    expect(sessionEndLabel(null, secondsAgo(STALE_AFTER_SECONDS + 1), NOW)).toMatch(/stopped checking in.*closed automatically/i);
+    expect(sessionEndLabel(null, secondsAgo(86_400), NOW)).toMatch(/stopped checking in/i);
+  });
+  it("a heartbeat only matters for sessions that have not ended", () => {
+    expect(sessionEndLabel("user", new Date(0), NOW)).toBe("Ended by you");
+  });
 });
 
 describe("planStatusView", () => {
@@ -126,15 +136,38 @@ describe("planStatusView", () => {
     expect(v.detail).toMatch(/free/i);
     expect(v.detail).toMatch(/purchased credits are kept/i);
   });
-  it("Free is active with no subscription", () => {
+  it("Free has no subscription, and the badge does not repeat the plan name", () => {
     const v = planStatusView({ plan: "FREE", planStatus: "active", planRenewsAt: null }, false, NOW);
-    expect(v).toMatchObject({ label: "Active", tone: "ok", alert: null });
-    expect(v.detail).toMatch(/no subscription/i);
+    expect(v).toMatchObject({ label: "No subscription", detail: null, tone: "ok", alert: null });
   });
-  it("Lifetime has no renewal", () => {
+  it("Lifetime has no renewal, and the badge does not repeat the plan name", () => {
     const v = planStatusView({ plan: "LIFETIME", planStatus: "active", planRenewsAt: null }, false, NOW);
-    expect(v.label).toBe("Lifetime");
+    expect(v.label).toBe("Never expires");
+    expect(v.label).not.toBe("Lifetime");
     expect(v.detail).toMatch(/no renewal/i);
+  });
+  describe("a renewal date that has already passed (late webhook, daily downgrade not run yet)", () => {
+    const past = new Date("2026-03-09T00:00:00Z"), PAST = "Mar 9, 2026";
+    it("an active subscriber is not told it renews in the past", () => {
+      const v = planStatusView({ ...pro, planRenewsAt: past }, true, NOW);
+      expect(v.detail).toBe(`Renewal was due ${PAST}; waiting for the payment to be confirmed.`);
+      expect(v.detail).not.toMatch(/^Renews/);
+      expect(v.alert).toBeNull();
+    });
+    it("a cancelling user is not told Pro stays active until a past date", () => {
+      const v = planStatusView({ ...pro, planStatus: "cancelling", planRenewsAt: past }, false, NOW);
+      expect(v.detail).toBe(`Pro ended ${PAST}; your plan is switching to Free shortly.`);
+      expect(v.detail).not.toMatch(/stays active/);
+    });
+    it("a Pro plan with no subscription on record and a past date says it ended", () => {
+      const v = planStatusView({ ...pro, planRenewsAt: past }, false, NOW);
+      expect(v.label).toBe("Not renewing");
+      expect(v.detail).toBe(`Pro ended ${PAST}; your plan is switching to Free shortly.`);
+    });
+    it("future dates are unchanged", () => {
+      expect(planStatusView(pro, true, NOW).detail).toBe(`Renews ${FUTURE}`);
+      expect(planStatusView({ ...pro, planStatus: "cancelling" }, false, NOW).detail).toBe(`Pro stays active until ${FUTURE}.`);
+    });
   });
   it("shows an unexpected status as-is instead of hiding it", () => {
     expect(planStatusView({ ...pro, planStatus: "paused" }, true, NOW).label).toBe("Paused");

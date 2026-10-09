@@ -2,7 +2,7 @@
  * Pure helpers for the signed-in account views (dashboard): usage maths, status wording and labels.
  * No I/O, so the wording and the edge cases (a plan with a zero allowance, a failed renewal) are unit-tested.
  */
-import { LOW_CREDIT_RATIO, type Plan, type PlanConfig } from "@/lib/plans";
+import { LOW_CREDIT_RATIO, STALE_AFTER_SECONDS, type Plan, type PlanConfig } from "@/lib/plans";
 import { fmtNum } from "@/lib/utils";
 
 const DATE = new Intl.DateTimeFormat("en", { dateStyle: "medium", timeZone: "UTC" });
@@ -73,7 +73,15 @@ const END_LABELS: Record<string, string> = {
   stale: "Stopped checking in (connection lost or tab closed)",
   superseded: "Replaced by a newer session",
 };
-export const sessionEndLabel = (reason: string | null) => (reason === null ? "Still open" : END_LABELS[reason] ?? "Ended");
+/**
+ * `lastSeen` is the last heartbeat. An unclosed session that has been silent longer than the stale cut-off is not running any more;
+ * it is closed (and billed up to that last heartbeat) by the stale sweep or when its owner next goes live.
+ */
+export function sessionEndLabel(reason: string | null, lastSeen?: Date | null, now = new Date()): string {
+  if (reason !== null) return END_LABELS[reason] ?? "Ended";
+  if (lastSeen && now.getTime() - lastSeen.getTime() > STALE_AFTER_SECONDS * 1000) return "Stopped checking in; it will be closed automatically";
+  return "Still open";
+}
 
 const capitalise = (s: string) => (s ? s[0].toUpperCase() + s.slice(1) : s);
 
@@ -97,7 +105,7 @@ export function planStatusView(
   const end = u.planRenewsAt ? fmtDate(u.planRenewsAt) : null;
   const periodOpen = !!u.planRenewsAt && u.planRenewsAt.getTime() > now.getTime();
 
-  if (u.plan === "LIFETIME") return { label: "Lifetime", detail: "No renewal needed.", tone: "ok", alert: null };
+  if (u.plan === "LIFETIME") return { label: "Never expires", detail: "No renewal needed.", tone: "ok", alert: null };
 
   if (u.planStatus === "past_due") {
     return {
@@ -108,14 +116,18 @@ export function planStatusView(
     };
   }
   if (u.planStatus === "cancelling") {
+    if (end && !periodOpen) return { label: "Cancelled", detail: `Pro ended ${end}; your plan is switching to Free shortly.`, tone: "neutral", alert: null };
     return { label: "Cancelled", detail: end ? `Pro stays active until ${end}.` : "Pro stays active until the end of your paid period.", tone: "neutral", alert: null };
   }
   if (u.planStatus === "expired") {
     return { label: "Pro ended", detail: "Your Pro plan ended and you are on Free. Purchased credits are kept.", tone: "neutral", alert: null };
   }
   if (u.planStatus === "active") {
-    if (u.plan === "FREE") return { label: "Active", detail: "No subscription.", tone: "ok", alert: null };
+    if (u.plan === "FREE") return { label: "No subscription", detail: null, tone: "ok", alert: null };
+    // The renewal date has passed but the plan has not been switched yet: say so instead of printing a date in the past as the future.
+    if (hasActiveSubscription && end && !periodOpen) return { label: "Active", detail: `Renewal was due ${end}; waiting for the payment to be confirmed.`, tone: "neutral", alert: null };
     if (hasActiveSubscription) return { label: "Active", detail: end ? `Renews ${end}` : null, tone: "ok", alert: null };
+    if (end && !periodOpen) return { label: "Not renewing", detail: `Pro ended ${end}; your plan is switching to Free shortly.`, tone: "neutral", alert: null };
     return { label: "Not renewing", detail: end ? `Pro is active until ${end}. No active subscription is on record, so it will not renew.` : "No active subscription is on record, so it will not renew.", tone: "neutral", alert: null };
   }
   return { label: capitalise(u.planStatus), detail: end ? `Until ${end}` : null, tone: "neutral", alert: null };

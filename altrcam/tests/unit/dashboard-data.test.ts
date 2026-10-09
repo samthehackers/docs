@@ -133,6 +133,26 @@ describe("usageHistory", () => {
     expect(out.sessions[1].prompt).toBeNull();
     expect(out.sessions[2]).toMatchObject({ prompt: null, endedAt: null, endReason: null });
   });
+  it("cuts a long prompt by characters, never through the middle of an emoji, and returns the last heartbeat", async () => {
+    const beat = new Date(Date.UTC(2026, 0, 3, 10, 0, 0));
+    await d.insert(studioSessions).values({
+      id: "00000000-0000-4000-8000-0000000000a1", userId: "U", maxSeconds: 120, startedAt: new Date(Date.UTC(2026, 0, 3)), lastHeartbeatAt: beat,
+      settings: { prompt: "😀".repeat(200) },
+    });
+    const [s] = (await usageHistory("U", d)).sessions;
+    expect([...s.prompt!]).toHaveLength(120);
+    expect(s.prompt).toBe("😀".repeat(120)); // a UTF-16 slice(0, 120) would have given 60 emoji, or split one
+    expect(s.prompt).not.toMatch(/\uFFFD/);
+    expect(s.lastHeartbeatAt.getTime()).toBe(beat.getTime());
+  });
+  it("does not hand the whole settings object to the page", async () => {
+    await d.insert(studioSessions).values({
+      id: "00000000-0000-4000-8000-0000000000a2", userId: "U", maxSeconds: 120, settings: { prompt: "p", referencePath: "U/secret.png", blob: "x".repeat(10_000) },
+    });
+    const [s] = (await usageHistory("U", d)).sessions;
+    expect(Object.keys(s)).not.toContain("settings");
+    expect(JSON.stringify(s)).not.toContain("secret.png");
+  });
   it("credit activity leaves out the per-heartbeat session debits so grants and top-ups stay visible", async () => {
     await grantCredits(d, "U", 300, "monthly", "signup_grant");
     for (let i = 0; i < 20; i++) await spend("U", 10, "monthly", new Date(Date.now() - i * 1000));

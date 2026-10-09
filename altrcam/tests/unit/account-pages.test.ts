@@ -152,6 +152,37 @@ describe("/dashboard", () => {
     expect(out).toContain('role="progressbar"');
     expect(out).toContain('aria-valuenow="25"');
   });
+  it("never prints more used than the allowance: a lapsed Pro month reads sensibly", async () => {
+    // Pro spent 4,000 monthly credits this month, then lapsed to Free (allowance 300).
+    await grantCredits(d, "A", 2000, "monthly", "monthly_refill");
+    await d.insert(creditLedger).values({ userId: "A", delta: -4000, bucket: "monthly", reason: "session" });
+    const t = text(await dash());
+    expect(t).toContain("100%");
+    expect(t).toContain("300 of 300 credits used this month");
+    expect(t).not.toMatch(/4,000 of 300/);
+    expect(t).toContain("You spent 4,000 monthly credits this month in total");
+    // and an ordinary month shows no such note
+    await d.execute(sql`truncate credit_ledger restart identity cascade`);
+    await grantCredits(d, "A", 300, "monthly", "signup_grant");
+    await d.insert(creditLedger).values({ userId: "A", delta: -75, bucket: "monthly", reason: "session" });
+    expect(text(await dash())).not.toContain("in total");
+  });
+  it("every grid on the dashboard has an explicit single column, so long preset names cannot widen the page on a phone", async () => {
+    const out = html(await dash());
+    const grids = [...out.matchAll(/<div class="grid ([^"]*)"/g)].map((m) => m[1]);
+    expect(grids.length).toBeGreaterThanOrEqual(3);
+    for (const g of grids) expect(g, g).toContain("grid-cols-1");
+  });
+  it("a session that stopped checking in is not shown as still open", async () => {
+    const ago = (s: number) => new Date(Date.now() - s * 1000);
+    await d.insert(studioSessions).values([
+      { id: SESSION(11), userId: "A", maxSeconds: 120, startedAt: ago(5000), lastHeartbeatAt: ago(4800), secondsBilled: 200 },
+      { id: SESSION(12), userId: "A", maxSeconds: 120, startedAt: ago(40), lastHeartbeatAt: ago(3), secondsBilled: 37 },
+    ]);
+    const t = text(await dash());
+    expect(t).toContain("Stopped checking in; it will be closed automatically");
+    expect(t).toContain("Still open");
+  });
   it("a plan with a zero monthly allowance shows no meter and never prints NaN", async () => {
     process.env.DATABASE_URL = "postgres://unused/ignored";
     await setPlanConfig(d, "FREE", { ...DEFAULT_PLANS.FREE, monthlyCredits: 0 }, "admin");
@@ -317,6 +348,14 @@ describe("/history", () => {
     expect(t).toContain(long);
     expect(t).not.toContain("bobclip");
     expect(t).not.toContain("bob's private prompt");
+  });
+  it("keeps long unbroken text from widening the page on a phone: one column, wrapping anywhere", async () => {
+    const url = "https://example.com/" + "a".repeat(300);
+    await d.insert(transformations).values({ userId: "A", title: url.slice(0, 60), prompt: url, type: "custom" });
+    const out = html(await page());
+    expect(out).toMatch(/<ul class="grid grid-cols-1 /); // a single auto-sized column grows with its content
+    expect(out).toContain("[overflow-wrap:anywhere]");
+    expect(out).toMatch(/<li class="min-w-0">/);
   });
   it("an item with no prompt has no empty prompt toggle", async () => {
     await d.insert(transformations).values({ userId: "A", title: "Snapshot", prompt: "" });

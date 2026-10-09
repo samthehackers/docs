@@ -52,11 +52,8 @@ export async function dashboardData(userId: string, plan: Plan, d?: DB) {
   };
 }
 
+/** Characters (code points, so an emoji is never cut in half) of a session's prompt to show in the list. */
 const PROMPT_PREVIEW = 120;
-const promptOf = (settings: unknown) => {
-  const p = (settings as { prompt?: unknown } | null)?.prompt;
-  return typeof p === "string" && p ? p.slice(0, PROMPT_PREVIEW) : null;
-};
 
 /**
  * The user's own recent studio sessions (date, billed seconds = credits spent, how it ended) and recent credit changes.
@@ -68,14 +65,16 @@ export async function usageHistory(userId: string, d?: DB, limit = 8) {
   const [sessions, credits] = await Promise.all([
     q.select({
       id: studioSessions.id, startedAt: studioSessions.startedAt, endedAt: studioSessions.endedAt, endReason: studioSessions.endReason,
-      secondsBilled: studioSessions.secondsBilled, settings: studioSessions.settings,
+      secondsBilled: studioSessions.secondsBilled, lastHeartbeatAt: studioSessions.lastHeartbeatAt,
+      // Only the cut-down prompt leaves the database: `settings` is client-supplied and can be large.
+      prompt: sql<string | null>`case when jsonb_typeof(${studioSessions.settings}->'prompt') = 'string' then left(${studioSessions.settings}->>'prompt', ${PROMPT_PREVIEW}) end`,
     }).from(studioSessions).where(eq(studioSessions.userId, userId)).orderBy(desc(studioSessions.startedAt)).limit(limit),
     q.select({ id: creditLedger.id, createdAt: creditLedger.createdAt, delta: creditLedger.delta, bucket: creditLedger.bucket, reason: creditLedger.reason })
       .from(creditLedger).where(and(eq(creditLedger.userId, userId), ne(creditLedger.reason, "session")))
       .orderBy(desc(creditLedger.createdAt), desc(creditLedger.id)).limit(limit),
   ]);
   return {
-    sessions: sessions.map(({ settings, ...s }) => ({ ...s, prompt: promptOf(settings) })),
+    sessions: sessions.map((s) => ({ ...s, prompt: s.prompt || null })),
     credits,
   };
 }

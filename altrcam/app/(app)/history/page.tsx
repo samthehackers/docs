@@ -60,9 +60,9 @@ export default async function History({ searchParams }: { searchParams: Promise<
           )}
         </Card>
       ) : (
-        <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {rows.map((r, i) => (
-            <li key={r.id}><Card className="overflow-hidden p-0">
+            <li key={r.id} className="min-w-0"><Card className="overflow-hidden p-0">
               {thumbs[i] ? /* eslint-disable-next-line @next/next/no-img-element */ <img src={thumbs[i]!} alt={r.title} className="aspect-video w-full object-cover" loading="lazy" /> : <div className="aspect-video bg-muted" />}
               <div className="space-y-2 p-4">
                 <p className="truncate font-medium">{r.title}</p>
@@ -70,7 +70,7 @@ export default async function History({ searchParams }: { searchParams: Promise<
                 {r.prompt && (
                   <details className="text-xs">
                     <summary className="cursor-pointer text-muted-foreground">Prompt</summary>
-                    <p className="mt-1 whitespace-pre-wrap break-words">{r.prompt}</p>
+                    <p className="mt-1 whitespace-pre-wrap [overflow-wrap:anywhere]">{r.prompt}</p>
                   </details>
                 )}
                 <HistoryActions id={r.id} />

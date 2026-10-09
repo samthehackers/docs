@@ -50,11 +50,14 @@ export function UsageCard(p: { allowance: number; usedMonthly: number; usedSecon
     );
   }
   const fromPurchased = p.usedSeconds - p.usedMonthly;
+  // The allowance can be smaller than what was spent earlier this month (Pro lapsed, or an admin lowered it).
+  const overAllowance = p.usedMonthly > p.allowance;
   return (
     <Card>
       <CardTitle>Usage of monthly allowance</CardTitle>
       <p className="mt-2 text-4xl font-bold">{p.usagePct}%</p>
-      <p className="mt-1 text-xs text-muted-foreground">{fmtNum(p.usedMonthly)} of {fmtNum(p.allowance)} credits used this month</p>
+      <p className="mt-1 text-xs text-muted-foreground">{fmtNum(Math.min(p.usedMonthly, p.allowance))} of {fmtNum(p.allowance)} credits used this month</p>
+      {overAllowance && <p className="mt-1 text-xs text-muted-foreground">You spent {fmtNum(p.usedMonthly)} monthly credits this month in total; part of that was under a larger allowance than your plan has now.</p>}
       <div className="mt-3 h-2 overflow-hidden rounded-full bg-muted" role="progressbar" aria-valuenow={p.usagePct} aria-valuemin={0} aria-valuemax={100} aria-label="Monthly usage">
         <div className="h-full bg-gradient-to-r from-primary to-accent" style={{ width: `${p.usagePct}%` }} />
       </div>
@@ -134,7 +137,7 @@ export function PresetsCard(p: { presets: { id: number; name: string; kind: stri
   );
 }
 
-export interface SessionRow { id: string; startedAt: Date; endReason: string | null; secondsBilled: number; prompt: string | null }
+export interface SessionRow { id: string; startedAt: Date; endReason: string | null; lastHeartbeatAt: Date; secondsBilled: number; prompt: string | null }
 export interface CreditRow { id: number; createdAt: Date; delta: number; bucket: string; reason: string }
 
 export function UsageHistory(p: { sessions: SessionRow[]; credits: CreditRow[] }) {
@@ -153,7 +156,7 @@ export function UsageHistory(p: { sessions: SessionRow[]; credits: CreditRow[] }
                   <div className="min-w-0">
                     <p className="font-medium">{fmtDate(s.startedAt)} · {fmtDuration(s.secondsBilled)}</p>
                     {s.prompt && <p className="truncate text-xs text-muted-foreground">{s.prompt}</p>}
-                    <p className="text-xs text-muted-foreground">{sessionEndLabel(s.endReason)}</p>
+                    <p className="text-xs text-muted-foreground">{sessionEndLabel(s.endReason, s.lastHeartbeatAt)}</p>
                   </div>
                   <span className="shrink-0 tabular-nums">{fmtNum(s.secondsBilled)} <span className="text-xs text-muted-foreground">credits</span></span>
                 </li>

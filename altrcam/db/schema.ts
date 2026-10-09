@@ -153,3 +153,15 @@ export const planConfig = pgTable("plan_config", {
   updatedBy: text("updated_by").notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+export const referrals = pgTable("referrals", {
+  id: serial("id").primaryKey(),
+  referrerId: text("referrer_id").notNull().references(() => users.id),
+  // One referrer per user. Nulled (not deleted) when a *rewarded* friend deletes their account, so the
+  // per-referrer reward cap keeps counting; unrewarded rows are deleted.
+  referredId: text("referred_id").unique().references(() => users.id),
+  status: text("status").notNull().default("pending"), // pending | rewarded | capped
+  rewardCredits: integer("reward_credits"),
+  rewardedAt: timestamp("rewarded_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [index("referrals_referrer_idx").on(t.referrerId)]);

@@ -4,7 +4,7 @@ Realtime AI video transformation on your webcam, as a real SaaS: accounts, plans
 
 **Stack:** Next.js 15 (App Router, TS strict) · Tailwind · Clerk · Supabase Postgres via Drizzle (server-side only) · Supabase Storage · fal.ai (`decart/lucy-2-5/realtime`) · Paystack + NOWPayments · Resend · Upstash Ratelimit · Vitest + Playwright · Vercel.
 
-> Read [`README_LIMITATIONS.md`](./README_LIMITATIONS.md) before going live. In particular, the fal WebRTC signaling message schema is **unverified** and has not been exercised against the real service.
+> **Going live? Follow [`GO_LIVE.md`](./GO_LIVE.md)** (ordered checklist, `npm run preflight`, exact Vercel settings). Read [`README_LIMITATIONS.md`](./README_LIMITATIONS.md) first. In particular, the fal WebRTC signaling message schema is **unverified** and has not been exercised against the real service.
 
 ## Quick start
 
@@ -31,11 +31,11 @@ Env is validated with Zod at boot in production (`lib/env.ts`, `instrumentation.
 | `NOWPAYMENTS_API_KEY`, `NOWPAYMENTS_IPN_SECRET` | Crypto |
 | `RESEND_API_KEY`, `EMAIL_FROM` | Receipts, low-credit alerts, ticket replies |
 | `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN` | Rate limiting |
-| `CRON_SECRET` | ≥16 chars. Vercel sends it as `Authorization: Bearer …` to cron routes |
+| `CRON_SECRET` | ≥16 chars. Vercel sends it as `Authorization: Bearer …` to cron routes. The GitHub Actions stale-session sweep needs the **same value as a repo secret** (`GO_LIVE.md` section 4b) |
 | `NEXT_PUBLIC_APP_URL` | e.g. `https://altrcam.com` |
 | `PRICE_CURRENCY` (`NGN`\|`USD`), `PRICE_*` | Prices **in minor units** (kobo/cents). Webhooks compare paid amounts against these |
 
-Plans, limits and credit grants are config in [`lib/plans.ts`](./lib/plans.ts); nothing else hard-codes them.
+Plan limits have defaults in [`lib/plans.ts`](./lib/plans.ts) and can be overridden by an admin (Admin → Plans) without a deploy; server code reads the effective values through `getPlans()`. Prices are env vars (`PRICE_*`); until `PRICING_APPROVED=true` the pricing pages say they aren't final.
 
 ## Dashboard setup
 
@@ -57,7 +57,7 @@ Plans, limits and credit grants are config in [`lib/plans.ts`](./lib/plans.ts); 
 
 **fal.ai:** create an API key → `FAL_KEY`. The browser never sees it; it talks to `/api/fal/proxy`, which only forwards realtime-token requests for the Lucy app and only for a signed-in user with an open studio session.
 
-**Vercel:** `vercel.json` registers crons: `/api/cron/refill` (monthly), `/api/cron/stale-sessions` (every 5 min — sub-daily crons need a Vercel paid plan), `/api/cron/retention` (daily: history purge + lapsed-plan downgrade).
+**Vercel:** `vercel.json` registers crons: `/api/cron/refill` (monthly) and `/api/cron/retention` (daily: history purge + lapsed-plan downgrade). `/api/cron/stale-sessions` runs every 5 minutes from GitHub Actions (`.github/workflows/altrcam-sweep.yml`; Hobby only allows daily Vercel crons). It stays off until the repo variable `ALTRCAM_URL` and secret `CRON_SECRET` are set; see `GO_LIVE.md` section 4b.
 
 ## Testing locally
 

@@ -14,7 +14,8 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx --env-file=.env.local scripts/migrate.ts",
     "db:seed": "tsx --env-file=.env.local scripts/seed.ts",
-    "test:public": "playwright test -c playwright.public.config.ts"
+    "test:public": "playwright test -c playwright.public.config.ts",
+    "preflight": "tsx --env-file=.env.local scripts/preflight.ts"
   },
   "dependencies": {
     "@clerk/nextjs": "^6.0.0",

@@ -1,19 +1,30 @@
 /**
  * Browser-only. WebRTC signaling for the Lucy realtime endpoint, isolated in one file.
  *
- * Sequence: ICE servers → SDP offer → SDP answer → trickled ICE candidates → remote track.
- * Messages travel over fal's realtime socket (@fal-ai/client), authenticated
- * with a short-lived token minted through our gated proxy (/api/fal/proxy).
+ * Sequence: SDP offer → SDP answer → trickled ICE candidates → remote track. Messages travel over fal's realtime
+ * socket (@fal-ai/client), authenticated with a short-lived token minted through our gated proxy (/api/fal/proxy).
+ *
+ * MESSAGE ORDER. Written against the real pinned @fal-ai/client (src/realtime.js; tests/unit/signaling-real-client.test.ts
+ * drives that client with only the WebSocket, fetch and RTCPeerConnection faked). Two properties of that client
+ * decide the design:
+ *   1. It opens nothing until the first send(): no token request, no socket. So no server message can arrive first,
+ *      and waiting for one before sending can never succeed. We send the OFFER FIRST and never wait for the server.
+ *   2. Until the socket is open it keeps ONE pending message, and a later send() replaces it (trickled ICE candidates
+ *      replaced the offer). So after the offer we hold every outgoing message in our own ordered outbox and flush it,
+ *      in order, once the server's first reply has arrived (a reply can only arrive once the socket is open). The
+ *      reply may be of any type: we only use its arrival.
+ * The fal client also swallows a failed token request (it goes quiet instead of calling onError), so we supply our
+ * own tokenProvider and report that failure ourselves, with the HTTP status.
  *
  * Serialization: uses the @fal-ai/client defaults (what fal's documented `fal.realtime.connect(...).send(obj)`
- * usage relies on). Earlier this forced JSON text frames; that was a guess and has been removed.
+ * usage relies on).
  *
- * UNVERIFIED: the message `type` names / field names below were written without access to fal's
- * signaling spec (see README_LIMITATIONS.md). If fal's schema differs, only `Outgoing`, `Incoming`
- * and `handleIncoming` need to change.
+ * UNVERIFIED: the message `type` names / field names below were written without access to fal's signaling spec
+ * (see README_LIMITATIONS.md). If fal's schema differs, `Outgoing`, `Incoming` and `handleIncoming` change; the
+ * ordering above does not depend on any name. Nothing here has been run against the live service.
  */
 import { fal } from "@fal-ai/client";
-import { FAL_APP, SESSION_HEADER } from "./config";
+import { FAL_APP, FAL_APP_ALIAS, SESSION_HEADER } from "./config";
 
 export interface LucyInputs {
   prompt: string;
@@ -33,6 +44,26 @@ type Incoming =
 
 export type ConnState = "idle" | "connecting" | "live" | "failed" | "closed";
 
+/** Why an attempt failed. The Studio maps these to plain-language text (lib/studio-messages.ts). */
+export type FailureCode =
+  | "token_refused"     // our proxy (or fal behind it) answered the connection-token request with an error status
+  | "token_unreachable" // no usable answer to the token request: network down, server error, unreadable body
+  | "socket_error"      // the realtime socket errored or closed abnormally
+  | "model_error"       // the service sent an `error` message
+  | "bad_answer"        // the service's answer could not be applied by the browser
+  | "answer_timeout"    // no answer within ANSWER_TIMEOUT_MS
+  | "ice_failed"        // the browser's WebRTC connection failed
+  | "connection_lost"   // the connection dropped and did not recover within DISCONNECT_GRACE_MS
+  | "setup_error";      // the browser could not build or send the offer
+
+export interface LucyFailure {
+  code: FailureCode;
+  /** Technical text for diagnostics. Not meant to be shown as the headline. */
+  message: string;
+  /** HTTP status (token request) or WebSocket close code (socket error), when there is one. */
+  status?: number;
+}
+
 export interface LucyConnection {
   pc: () => RTCPeerConnection | null;
   close: () => void;
@@ -43,25 +74,73 @@ export interface ConnectOptions {
   stream: MediaStream;
   inputs: LucyInputs;
   onRemoteStream: (s: MediaStream) => void;
-  onState: (s: ConnState, detail?: string) => void;
+  /**
+   * "failed" is final for this connection and is NOT followed by "closed": the resources are already released.
+   * "closed" is only reported for a close() the caller asked for.
+   */
+  onState: (s: ConnState, detail?: string, failure?: LucyFailure) => void;
 }
 
-const FALLBACK_ICE: RTCIceServer[] = [{ urls: "stun:stun.l.google.com:19302" }];
-const ICE_WAIT_MS = 3000;
+/** The offer is made before the service can say anything, so it uses a public STUN server; ice_servers messages are not used. */
+const ICE_SERVERS: RTCIceServer[] = [{ urls: "stun:stun.l.google.com:19302" }];
 const ANSWER_TIMEOUT_MS = 20000;
+/** How long the browser may stay "disconnected" before we give up on it (it usually recovers within seconds, or goes "failed"). */
+const DISCONNECT_GRACE_MS = 15000;
+const TOKEN_PROXY_URL = "/api/fal/proxy";
+const TOKEN_TARGET_URL = "https://rest.fal.ai/tokens/";
+/** Same lifetime the fal client asks for by default. The proxy refuses more than 300. */
+const TOKEN_EXPIRATION_SECONDS = 120;
+
+class TokenError extends Error {
+  constructor(message: string, readonly status?: number) { super(message); }
+}
+
+/** Mint a realtime token through our proxy, the request the fal client would make itself, but with failures we can see. */
+async function requestToken(sessionId: string): Promise<string> {
+  let res: Response;
+  try {
+    res = await fetch(TOKEN_PROXY_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json", "x-fal-target-url": TOKEN_TARGET_URL, [SESSION_HEADER]: sessionId },
+      body: JSON.stringify({ allowed_apps: [FAL_APP_ALIAS], token_expiration: TOKEN_EXPIRATION_SECONDS }),
+    });
+  } catch (e) {
+    throw new TokenError(`Token request failed: ${e instanceof Error ? e.message : "network error"}`);
+  }
+  const text = await res.text().catch(() => "");
+  if (!res.ok) {
+    let why = "";
+    try { why = (JSON.parse(text) as { error?: string }).error ?? ""; } catch { /* not JSON */ }
+    throw new TokenError(`Token request refused: HTTP ${res.status}${why ? ` (${why})` : ""}`, res.status);
+  }
+  // fal answers with a JSON string; plain text and an older proxy's { detail } wrapper are accepted too.
+  let token: unknown = text.trim();
+  try { token = JSON.parse(text); } catch { /* plain text */ }
+  if (token && typeof token === "object") token = (token as { detail?: unknown }).detail;
+  if (typeof token !== "string" || !token) throw new TokenError("Token response was empty or unreadable");
+  return token;
+}
+
+function tokenFailure(e: unknown): LucyFailure {
+  const message = e instanceof Error ? e.message : String(e);
+  const status = e instanceof TokenError ? e.status : undefined;
+  // A server-side error (5xx) or no answer at all is "can't reach"; a 4xx is the server saying no.
+  return status !== undefined && status < 500 ? { code: "token_refused", message, status } : { code: "token_unreachable", message, ...(status !== undefined ? { status } : {}) };
+}
+
+const errorText = (e: unknown) => (e instanceof Error ? e.message : String((e as { message?: string })?.message ?? e));
 
 export function connectLucy(o: ConnectOptions): LucyConnection {
-  fal.config({
-    proxyUrl: "/api/fal/proxy",
-    requestMiddleware: async (req) => ({ ...req, headers: { ...(req.headers ?? {}), [SESSION_HEADER]: o.sessionId } }),
-  });
-
   let pc: RTCPeerConnection | null = null;
   let closed = false;
   let remoteSet = false;
   const pendingRemote: RTCIceCandidateInit[] = [];
   let answerTimer: ReturnType<typeof setTimeout> | undefined;
-  let started = false;
+  let lostTimer: ReturnType<typeof setTimeout> | undefined;
+  // Outgoing order: the offer, then everything in `outbox`, flushed once the offer is out AND the server has replied.
+  const outbox: Outgoing[] = [];
+  let offerSent = false;
+  let replied = false;
 
   o.onState("connecting");
 
@@ -69,50 +148,85 @@ export function connectLucy(o: ConnectOptions): LucyConnection {
     connectionKey: `altrcam-${o.sessionId}-${Math.random().toString(36).slice(2)}`,
     throttleInterval: 0,
     clientOnly: true,
-    onResult: (msg) => void handleIncoming(msg as Incoming).catch((e) => fail(e)),
-    onError: (e) => fail(e),
+    // No tokenExpirationSeconds: the client then schedules no token-refresh timer (it never clears one when the socket
+    // closes before it opens), and an open socket does not need a fresh token.
+    tokenProvider: async () => {
+      try { return await requestToken(o.sessionId); } catch (e) { fail(tokenFailure(e)); throw e; }
+    },
+    onResult: (msg) => {
+      if (closed) return;
+      replied = true;
+      flush();
+      void handleIncoming(msg as Incoming).catch((e) => fail({ code: "setup_error", message: errorText(e) }));
+    },
+    onError: (e) => fail({ code: "socket_error", message: errorText(e), status: typeof (e as { status?: unknown })?.status === "number" ? (e as { status: number }).status : undefined }),
   });
 
-  function fail(e: unknown) {
+  /** Final for this connection: release everything, then report. No "closed" follows. */
+  function fail(f: LucyFailure) {
     if (closed) return;
-    o.onState("failed", e instanceof Error ? e.message : String((e as { message?: string })?.message ?? e));
-    close();
+    release();
+    o.onState("failed", f.message, f);
   }
 
-  async function start(iceServers: RTCIceServer[]) {
-    if (started || closed) return;
-    started = true;
-    clearTimeout(iceTimer);
-    const conn = new RTCPeerConnection({ iceServers });
+  function release() {
+    closed = true;
+    clearTimeout(answerTimer);
+    clearTimeout(lostTimer);
+    outbox.length = 0;
+    if (pc) {
+      pc.onicecandidate = null; pc.ontrack = null; pc.onconnectionstatechange = null; // nothing may call back into us after this
+      try { pc.close(); } catch { /* already closed */ }
+    }
+    try { socket.close(); } catch { /* already closed */ }
+    pc = null;
+  }
+
+  function sendNow(m: Outgoing) {
+    if (closed) return; // a send after close would make the fal client open a brand-new socket
+    try { socket.send(m); } catch (e) { fail({ code: "setup_error", message: `Could not send to the service: ${errorText(e)}` }); }
+  }
+  const enqueue = (m: Outgoing) => { if (offerSent && replied) sendNow(m); else outbox.push(m); };
+  function flush() { if (offerSent && replied) for (const m of outbox.splice(0)) sendNow(m); }
+
+  async function start() {
+    const conn = new RTCPeerConnection({ iceServers: ICE_SERVERS });
     pc = conn;
     o.stream.getTracks().forEach((t) => conn.addTrack(t, o.stream));
     conn.ontrack = (ev) => { if (ev.streams[0]) o.onRemoteStream(ev.streams[0]); };
-    conn.onicecandidate = (ev) => { if (ev.candidate) socket.send({ type: "ice_candidate", candidate: ev.candidate.toJSON() }); };
+    conn.onicecandidate = (ev) => { if (ev.candidate) enqueue({ type: "ice_candidate", candidate: ev.candidate.toJSON() }); };
     conn.onconnectionstatechange = () => {
-      if (conn.connectionState === "connected") { clearTimeout(answerTimer); o.onState("live"); }
-      else if (conn.connectionState === "failed") fail(new Error("Connection failed"));
-      else if (conn.connectionState === "disconnected") o.onState("connecting", "Reconnecting…");
+      if (conn.connectionState === "connected") { clearTimeout(answerTimer); clearTimeout(lostTimer); o.onState("live"); }
+      else if (conn.connectionState === "failed") fail({ code: "ice_failed", message: "Connection failed" });
+      else if (conn.connectionState === "disconnected") {
+        o.onState("connecting", "Reconnecting…");
+        clearTimeout(lostTimer);
+        lostTimer = setTimeout(() => fail({ code: "connection_lost", message: "Disconnected and did not recover" }), DISCONNECT_GRACE_MS);
+      }
     };
     const offer = await conn.createOffer();
     await conn.setLocalDescription(offer);
-    socket.send({
+    if (closed) return; // closed while the browser was negotiating
+    sendNow({
       type: "offer", sdp: offer.sdp ?? "",
       prompt: o.inputs.prompt,
       enable_prompt_expansion: o.inputs.enablePromptExpansion,
       ...(o.inputs.referenceImageUrl ? { reference_image_url: o.inputs.referenceImageUrl } : {}),
     });
-    answerTimer = setTimeout(() => fail(new Error("Timed out waiting for the model to answer")), ANSWER_TIMEOUT_MS);
+    offerSent = true;
+    flush();
+    answerTimer = setTimeout(() => fail({ code: "answer_timeout", message: "Timed out waiting for the model to answer" }), ANSWER_TIMEOUT_MS);
   }
 
   async function handleIncoming(msg: Incoming) {
     if (closed) return;
     switch (msg.type) {
       case "ice_servers":
-        await start(msg.ice_servers?.length ? msg.ice_servers : FALLBACK_ICE);
-        break;
+        break; // the offer was made before the service could say anything, so these cannot be used
       case "answer":
         if (!pc) return;
-        await pc.setRemoteDescription({ type: "answer", sdp: msg.sdp });
+        try { await pc.setRemoteDescription({ type: "answer", sdp: msg.sdp }); } catch (e) { fail({ code: "bad_answer", message: `Could not apply the answer: ${errorText(e)}` }); return; }
+        if (closed) return;
         remoteSet = true;
         for (const c of pendingRemote.splice(0)) await pc.addIceCandidate(c).catch(() => {});
         break;
@@ -121,22 +235,16 @@ export function connectLucy(o: ConnectOptions): LucyConnection {
         else await pc.addIceCandidate(msg.candidate).catch(() => {});
         break;
       case "error":
-        fail(new Error(msg.message ?? "Model error"));
+        fail({ code: "model_error", message: msg.message ?? "Model error" });
         break;
     }
   }
 
-  // If the service never announces ICE servers, proceed with a public STUN server.
-  const iceTimer = setTimeout(() => void start(FALLBACK_ICE).catch(fail), ICE_WAIT_MS);
+  void start().catch((e) => fail({ code: "setup_error", message: `Could not start the connection: ${errorText(e)}` }));
 
   function close() {
     if (closed) return;
-    closed = true;
-    clearTimeout(answerTimer);
-    clearTimeout(iceTimer);
-    try { pc?.close(); } catch { /* already closed */ }
-    try { socket.close(); } catch { /* already closed */ }
-    pc = null;
+    release();
     o.onState("closed");
   }
 

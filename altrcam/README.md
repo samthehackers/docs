@@ -47,7 +47,7 @@ Plan limits have defaults in [`lib/plans.ts`](./lib/plans.ts) and can be overrid
 **Clerk**
 1. Enable Email+password, Google and GitHub. Optionally enable TOTP (Multi-factor).
 2. Webhooks → add endpoint `https://<domain>/api/webhooks/clerk` with events `user.created`, `user.updated`, `user.deleted`; copy the signing secret to `CLERK_WEBHOOK_SECRET`.
-3. Admin role = `publicMetadata.role = "admin"` (set by `npm run db:seed -- <email>`). It is re-checked server-side in every `/api/admin/*` handler and the `/admin` layout.
+3. Admin role = `publicMetadata.role = "admin"` (set by `npm run db:seed -- <email>`). It is re-checked server-side in every `/api/admin/*` handler, in the `/admin` page itself and inside every admin data function (`lib/admin.ts`), not only in the layout: Next.js renders a layout and its page in parallel, so a layout redirect alone does not protect the page's data. Tests call the page and each data function directly as a signed-out visitor, a normal user and an admin (`tests/unit/admin-gate.test.ts`); a source check fails if the page ever runs its own database query. This has not been exercised against real Clerk.
 
 **Paystack**
 1. Create two Plans (monthly, yearly) whose amounts equal `PRICE_PRO_MONTHLY` / `PRICE_PRO_YEARLY`; put the plan codes in env.

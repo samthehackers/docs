@@ -1,13 +1,11 @@
 import Link from "next/link";
-import { desc } from "drizzle-orm";
 import { Card, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { CreditForm, PlanForm, TicketReply } from "@/components/admin/forms";
 import { PlanLimitsForm } from "@/components/admin/plan-limits-form";
 import { db } from "@/lib/db";
-import { auditLog, payments, planConfig, studioSessions, supportTickets, webhookEvents } from "@/db/schema";
-import { getPlans } from "@/lib/plan-config";
-import { kpis, productLabel, searchUsers, userDetail } from "@/lib/admin";
+import { adminAudit, adminPayments, adminPlans, adminSessions, adminTickets, adminWebhooks, kpis, productLabel, searchUsers, userDetail } from "@/lib/admin";
+import { requireAdminPage } from "@/lib/session-user";
 import { ledgerBalance } from "@/lib/credits";
 import { money, relativeTime } from "@/lib/utils";
 
@@ -17,6 +15,9 @@ export const dynamic = "force-dynamic";
 const TABS = ["overview", "users", "plans", "payments", "sessions", "tickets", "webhooks", "audit"] as const;
 
 export default async function Admin({ searchParams }: { searchParams: Promise<{ tab?: string; q?: string; user?: string }> }) {
+  // The layout also redirects, but it is not a boundary: Next renders layout and page in parallel. Check here, before
+  // anything below is created, and again inside every data function (lib/admin.ts).
+  await requireAdminPage();
   const sp = await searchParams;
   const tab = (TABS as readonly string[]).includes(sp.tab ?? "") ? sp.tab! : "overview";
   return (
@@ -84,17 +85,17 @@ async function Users({ q, userId }: { q: string; userId?: string }) {
 }
 
 async function Payments() {
-  const rows = await db().select().from(payments).orderBy(desc(payments.createdAt)).limit(100);
+  const rows = await adminPayments();
   return <Table head={["Date", "Provider", "Item", "Amount", "Status", "User", "Ref"]}>{rows.map((p) => <tr key={p.id}><td className="p-3">{relativeTime(p.createdAt)}</td><td className="p-3">{p.provider}</td><td className="p-3">{productLabel(p.product)}</td><td className="p-3">{money(p.amountMinor, p.currency)}</td><td className="p-3">{p.status}</td><td className="p-3 text-xs">{p.userId ?? "anonymised"}</td><td className="p-3 font-mono text-xs">{p.reference}</td></tr>)}</Table>;
 }
 
 async function Sessions() {
-  const rows = await db().select().from(studioSessions).orderBy(desc(studioSessions.startedAt)).limit(100);
+  const rows = await adminSessions();
   return <Table head={["Started", "User", "Billed s", "FPS", "RTT ms", "Ended"]}>{rows.map((s) => <tr key={s.id}><td className="p-3">{relativeTime(s.startedAt)}</td><td className="p-3 text-xs">{s.userId}</td><td className="p-3">{s.secondsBilled}</td><td className="p-3">{s.avgFps?.toFixed(0) ?? "—"}</td><td className="p-3">{s.avgLatencyMs?.toFixed(0) ?? "—"}</td><td className="p-3">{s.endedAt ? s.endReason : "live"}</td></tr>)}</Table>;
 }
 
 async function Tickets() {
-  const rows = await db().select().from(supportTickets).orderBy(desc(supportTickets.createdAt)).limit(50);
+  const rows = await adminTickets();
   return (
     <div className="space-y-4">{rows.length === 0 && <Card className="text-center text-sm text-muted-foreground">No tickets.</Card>}
       {rows.map((t) => (
@@ -108,18 +109,17 @@ async function Tickets() {
 }
 
 async function Webhooks() {
-  const rows = await db().select({ id: webhookEvents.id, provider: webhookEvents.provider, type: webhookEvents.type, at: webhookEvents.processedAt, eventId: webhookEvents.eventId }).from(webhookEvents).orderBy(desc(webhookEvents.processedAt)).limit(100);
+  const rows = await adminWebhooks();
   return <Table head={["Received", "Provider", "Type", "Event id"]}>{rows.map((w) => <tr key={w.id}><td className="p-3">{relativeTime(w.at)}</td><td className="p-3">{w.provider}</td><td className="p-3">{w.type}</td><td className="p-3 font-mono text-xs">{w.eventId.slice(0, 48)}</td></tr>)}</Table>;
 }
 
 async function Audit() {
-  const rows = await db().select().from(auditLog).orderBy(desc(auditLog.createdAt)).limit(100);
+  const rows = await adminAudit();
   return <Table head={["When", "Actor", "Action", "Target", "Meta"]}>{rows.map((a) => <tr key={a.id}><td className="p-3">{relativeTime(a.createdAt)}</td><td className="p-3 text-xs">{a.actorId}</td><td className="p-3">{a.action}</td><td className="p-3 text-xs">{a.target}</td><td className="p-3 font-mono text-xs">{JSON.stringify(a.meta)}</td></tr>)}</Table>;
 }
 
 async function PlanLimits() {
-  const [plans, rows] = await Promise.all([getPlans(db()), db().select({ plan: planConfig.plan }).from(planConfig)]);
-  const custom = new Set(rows.map((r) => r.plan));
+  const { plans, customised: custom } = await adminPlans();
   return (
     <div className="space-y-6">
       <p className="text-sm text-muted-foreground">Changes apply to new sessions, refills and purchases within about 15 seconds and are written to the audit log. Lowering a limit doesn't remove anything a user already has. Prices are set separately in environment variables.</p>

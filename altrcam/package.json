@@ -9,6 +9,7 @@
     "lint": "next lint --max-warnings=50",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "test:integration": "vitest run -c vitest.integration.config.ts",
     "test:e2e": "playwright test",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx --env-file=.env.local scripts/migrate.ts",

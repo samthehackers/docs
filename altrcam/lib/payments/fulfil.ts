@@ -1,4 +1,4 @@
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, lt, sql } from "drizzle-orm";
 import { auditLog, payments, subscriptions, users, webhookEvents } from "@/db/schema";
 import { db, type DB } from "@/lib/db";
 import { grantCredits, resetMonthly } from "@/lib/credits";
@@ -101,7 +101,7 @@ export async function recordEvent(provider: string, eventId: string, type: strin
 export async function downgradeExpired(d: DB = db(), now = new Date()) {
   const grace = new Date(now.getTime() - 2 * DAY);
   const rows = await d.update(users).set({ plan: "FREE", planStatus: "expired", planRenewsAt: null })
-    .where(and(eq(users.plan, "PRO"), sql`${users.planRenewsAt} < ${grace}`)).returning({ id: users.id });
+    .where(and(eq(users.plan, "PRO"), lt(users.planRenewsAt, grace))).returning({ id: users.id }); // lt() maps the Date through the column; a raw sql`... ${date}` fails on postgres-js
   for (const r of rows) {
     await notify(d, r.id, "plan_change", "Your Pro plan ended", "You're back on Free. Purchased credits are kept.");
     await d.insert(auditLog).values({ actorId: "system", action: "plan.expired", target: r.id });

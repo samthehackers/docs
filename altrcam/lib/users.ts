@@ -42,9 +42,10 @@ export async function deleteAccount(userId: string, opts: { deleteClerk: boolean
   }
   await deleteUserFiles(userId).catch((e) => console.error("[delete] storage", e));
   await d.transaction(async (tx) => {
-    // Lock the user first (same order as payment fulfilment and referral claims) so deletion waits for an
-    // in-flight payment instead of deadlocking with it or hitting a foreign-key error mid-way.
-    await tx.execute(sql`select 1 from ${users} where ${users.id} = ${userId} for update`);
+    // Lock order matters: payment fulfilment locks the payment row and metering locks the session row BEFORE they touch
+    // the user row, so this transaction touches payments and sessions first and the user row last. Taking the user row
+    // lock first (an earlier version did) deadlocks with a heartbeat or a payment confirmed at the same moment.
+    // tests/integration/delete-account.pg.test.ts runs these races on a real PostgreSQL.
     await tx.update(payments).set({ userId: null, raw: null }).where(eq(payments.userId, userId));
     await purgeReferrals(tx, userId);
     await tx.delete(notifications).where(eq(notifications.userId, userId));

@@ -7,7 +7,7 @@ import { Input, Select, Textarea } from "@/components/ui/input";
 import { connectLucy, readStats } from "@/lib/fal/signaling";
 import { BUILTIN_PRESETS, TYPE_BY_KIND, type PresetKind } from "@/lib/studio-presets";
 import { readUrl, uploadFile } from "@/lib/client-upload";
-import { HEARTBEAT_SECONDS } from "@/lib/plans";
+import { CAPTURE_SIZE, HEARTBEAT_SECONDS } from "@/lib/plans";
 import { createCamera, EMPTY_CAMERA_VIEW, type Camera as CameraController, type CameraView } from "@/lib/studio-camera";
 import { browserNetwork, createStudioSession, initialSessionView, type SessionView, type StartInputs, type StudioSession } from "@/lib/studio-session";
 import { MESSAGES, STUDIO_NOTICES } from "@/lib/studio-messages";
@@ -21,7 +21,6 @@ export interface StudioProps {
   initial: { prompt: string; enablePromptExpansion: boolean; kind: PresetKind; referencePath: string | null };
 }
 
-const SIZE = { low: { width: 640, height: 360 }, high: { width: 1280, height: 720 } };
 const fmt = (s: number) => `${Math.floor(s / 60)}:${String(Math.max(0, s) % 60).padStart(2, "0")}`;
 
 /**
@@ -70,7 +69,7 @@ export function Studio(p: StudioProps) {
     const c = createCamera({
       mediaDevices: navigator.mediaDevices,
       secureContext: window.isSecureContext,
-      size: SIZE[p.resolution],
+      size: CAPTURE_SIZE[p.resolution],
       attach: (s) => { if (localRef.current) localRef.current.srcObject = s; },
       onLost: () => { void session.current?.cameraLost(); },
     });

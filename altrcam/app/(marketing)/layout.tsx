@@ -1,11 +1,10 @@
 import Link from "next/link";
-import { auth } from "@clerk/nextjs/server";
 import { Logo } from "@/components/logo";
 import { buttonClass } from "@/components/ui/button";
-import { clerkConfigured } from "@/lib/config";
+import { viewerId } from "@/lib/viewer";
 
 export default async function MarketingLayout({ children }: { children: React.ReactNode }) {
-  const { userId } = clerkConfigured() ? await auth() : { userId: null };
+  const userId = await viewerId();
   return (
     <div className="flex min-h-screen flex-col">
       <header className="sticky top-0 z-30 border-b bg-background/80 backdrop-blur">

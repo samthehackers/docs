@@ -2,7 +2,7 @@
  * Pure helpers for the signed-in account views (dashboard): usage maths, status wording and labels.
  * No I/O, so the wording and the edge cases (a plan with a zero allowance, a failed renewal) are unit-tested.
  */
-import { LOW_CREDIT_RATIO, STALE_AFTER_SECONDS, type Plan, type PlanConfig } from "@/lib/plans";
+import { CAPTURE_SIZE, LOW_CREDIT_RATIO, STALE_AFTER_SECONDS, type Plan, type PlanConfig } from "@/lib/plans";
 import { fmtNum } from "@/lib/utils";
 
 const DATE = new Intl.DateTimeFormat("en", { dateStyle: "medium", timeZone: "UTC" });
@@ -133,15 +133,18 @@ export function planStatusView(
   return { label: capitalise(u.planStatus), detail: end ? `Until ${end}` : null, tone: "neutral", alert: null };
 }
 
+/** The plan setting controls the camera size the Studio asks for, not the quality of what the AI returns. */
+const captureLabel = (p: PlanConfig) => `${CAPTURE_SIZE[p.maxResolution].width}×${CAPTURE_SIZE[p.maxResolution].height}`;
+
 export interface ComparisonRow { label: string; free: string; pro: string }
 
 /** Free against Pro, read from the effective plan limits (admin overrides included), for the upgrade card. */
 export function planComparison(free: PlanConfig, pro: PlanConfig): ComparisonRow[] {
-  const days = (n: number | null) => (n ? `${n} days` : "Forever");
+  const days = (n: number | null) => (n ? `${n} days` : "No expiry");
   return [
     { label: "Credits per month", free: fmtNum(free.monthlyCredits), pro: fmtNum(pro.monthlyCredits) },
     { label: "Longest session", free: fmtSessionLimit(free.maxSessionSeconds), pro: fmtSessionLimit(pro.maxSessionSeconds) },
-    { label: "Resolution", free: free.maxResolution === "high" ? "High" : "Standard", pro: pro.maxResolution === "high" ? "High" : "Standard" },
+    { label: "Camera capture", free: captureLabel(free), pro: captureLabel(pro) },
     { label: "Saved presets", free: fmtNum(free.presets), pro: fmtNum(pro.presets) },
     { label: "History kept", free: days(free.historyDays), pro: days(pro.historyDays) },
     { label: "Clip recording", free: free.clipRecording ? "Yes" : "No", pro: pro.clipRecording ? "Yes" : "No" },

@@ -92,6 +92,8 @@ The project exists: **`altrcam`**, team *TrustGeeks Security lnc teams* (`geeeks
 
 **Environment variables:** add every variable above in *Settings → Environment Variables*. Use **different values per environment**: Preview gets the Clerk *development* instance and Paystack **test** keys; only Production gets live ones. `NEXT_PUBLIC_*` values are baked in at build time, so **redeploy after changing them**.
 
+**Set the Clerk keys for Production builds too.** The public pages read the signed-in state; a build without the keys bakes in the signed-out state for any page Next renders statically. With the keys set, every marketing page is dynamic (the layout reads the session).
+
 The app builds and serves public pages even with none of them set. `GET /api/health` on the deployed URL shows which integrations it considers configured (booleans only), a quick way to see what's still missing.
 
 ## 4b. Turn on the stale-session sweep (GitHub Actions)
@@ -151,6 +153,8 @@ None of these was read from fal's or Decart's documentation, and none was used t
 - fal's own realtime example calls `fal.realtime.connect` with `onResult`, `onError` and a `tokenProvider` that POSTs to the app's backend and returns the token as plain text, uses `tokenExpirationSeconds` of 10, and ends with `connection.send({})`.
 - fal's guide lists $0.04 per second of processed video (see section 1).
 - Decart's own direct (non-fal) API uses an `ice-candidate` message type and an `answer` type with an `sdp` field. If fal's schema turns out to differ from ours (`ice_candidate`, `answer`), this is a lead on what to try.
+
+**When a real session has worked, update what the public pages say.** Until then the landing page, `/how-it-works`, `/pricing`, the FAQ and `/billing` tell visitors that live video has not been tested end to end and may not connect (`lib/availability.ts`; one wording, shown in all five places), and the site's meta description and hero say the product is "built to" restyle video rather than that it does. After you have run and checked a session, replace that wording with what you actually tested, or remove the `AvailabilityNotice` uses and the FAQ entry "Does the live video work yet?", and un-hedge the hero and `app/layout.tsx`. Do not leave "not tested" up after it has been, and do not take it down before. **Tests will fail when you do, on purpose:** they assert the notice (search for `LIVE_AVAILABILITY` and `live-availability` in `tests/unit/public-copy.test.ts`, `tests/unit/public-pages.test.ts` and `tests/public/site.spec.ts`); update them to the new wording in the same change.
 
 ## 8. End-to-end test (test mode)
 - [ ] **Sign up with Google**: land on `/dashboard`; a `users` row exists with your FREE allowance (`signup_grant` in `credit_ledger`).

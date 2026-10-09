@@ -6,7 +6,7 @@ export default function Terms() {
       <h1 className="text-4xl font-bold text-foreground">Terms of Service</h1>
       <p className="rounded-md border border-accent/40 p-3">Template text. Have it reviewed by counsel and replace placeholders before launch.</p>
       <h2 className="pt-4 text-lg font-semibold text-foreground">1. The service</h2>
-      <p>AltrCam transforms your live webcam video using AI. Access requires an account and credits, where 1 credit equals 1 second of live video.</p>
+      <p>AltrCam transforms your live webcam video using AI. Access requires an account and credits, where 1 credit equals 1 second of session time, counted from when you press Go live until the session ends, including time spent connecting.</p>
       <h2 className="pt-4 text-lg font-semibold text-foreground">2. Acceptable use</h2>
       <p>You may not impersonate a real person to deceive or defraud, create sexual or abusive content, depict minors inappropriately, harass others, or break the law. We may suspend accounts that do.</p>
       <h2 className="pt-4 text-lg font-semibold text-foreground">3. Payments and credits</h2>

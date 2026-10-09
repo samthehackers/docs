@@ -180,7 +180,8 @@ describe("planComparison", () => {
     const by = Object.fromEntries(rows.map((r) => [r.label, r]));
     expect(by["Credits per month"]).toMatchObject({ free: "300", pro: "6,000" });
     expect(by["Longest session"]).toMatchObject({ free: "2 min", pro: "30 min" });
-    expect(by["Resolution"]).toMatchObject({ free: "Standard", pro: "High" });
+    expect(by["Camera capture"]).toMatchObject({ free: "640×360", pro: "1280×720" });
+    expect(by["Resolution"]).toBeUndefined();
     expect(by["Saved presets"]).toMatchObject({ free: "3", pro: "100" });
     expect(by["History kept"]).toMatchObject({ free: "7 days", pro: "365 days" });
     expect(by["Clip recording"]).toMatchObject({ free: "No", pro: "Yes" });
@@ -189,7 +190,7 @@ describe("planComparison", () => {
     const rows = planComparison({ ...DEFAULT_PLANS.FREE, monthlyCredits: 0, historyDays: null }, { ...DEFAULT_PLANS.PRO, monthlyCredits: 9000, maxSessionSeconds: 3600 });
     const by = Object.fromEntries(rows.map((r) => [r.label, r]));
     expect(by["Credits per month"]).toMatchObject({ free: "0", pro: "9,000" });
-    expect(by["History kept"].free).toBe("Forever");
+    expect(by["History kept"].free).toBe("No expiry");
     expect(by["Longest session"].pro).toBe("60 min");
   });
 });

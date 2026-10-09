@@ -1,5 +1,6 @@
 import { desc, eq, and } from "drizzle-orm";
 import { Badge } from "@/components/ui/badge";
+import { AvailabilityNotice } from "@/components/availability-notice";
 import { PricingNotice } from "@/components/pricing-notice";
 import { capabilities } from "@/lib/config";
 import { Card } from "@/components/ui/card";
@@ -27,6 +28,7 @@ export default async function Billing() {
     <div className="space-y-10">
       <h1 className="text-3xl font-bold">Billing</h1>
       <PricingNotice />
+      <AvailabilityNotice />
       {!capabilities().paystack && <p role="status" className="rounded-md border p-3 text-sm text-muted-foreground">Payments aren't available on this deployment yet, so checkout is disabled.</p>}
 
       <Card className="flex flex-wrap items-center justify-between gap-4">
@@ -34,7 +36,7 @@ export default async function Billing() {
           <p className="text-sm text-muted-foreground">Current plan</p>
           <p className="text-2xl font-bold">{plans[user.plan].label} <Badge className="ml-2 align-middle">{user.planStatus}</Badge></p>
           {user.plan === "PRO" && user.planRenewsAt && <p className="text-sm text-muted-foreground">{sub ? "Renews" : "Ends"} {user.planRenewsAt.toLocaleDateString("en", { dateStyle: "medium" })}</p>}
-          {user.plan === "LIFETIME" && <p className="text-sm text-muted-foreground">Yours forever.</p>}
+          {user.plan === "LIFETIME" && <p className="text-sm text-muted-foreground">No renewal needed.</p>}
         </div>
         {sub && <CancelButton />}
       </Card>

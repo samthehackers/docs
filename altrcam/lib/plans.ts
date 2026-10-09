@@ -1,6 +1,14 @@
 /** Single source of truth for plans, products and limits. 1 credit = 1 second of realtime AI output. */
 export type Plan = "FREE" | "PRO" | "LIFETIME";
 export type Resolution = "low" | "high";
+/**
+ * The camera size the Studio asks the browser for, per plan. It is a request ("ideal"): the camera may deliver
+ * something else, and the AI service decides what it sends back. Public pages describe it as camera capture only.
+ */
+export const CAPTURE_SIZE: Record<Resolution, { width: number; height: number }> = {
+  low: { width: 640, height: 360 },
+  high: { width: 1280, height: 720 },
+};
 export type ProductId =
   | "PRO_MONTHLY"
   | "PRO_YEARLY"

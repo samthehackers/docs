@@ -138,6 +138,32 @@ describe("connectLucy against the real client", () => {
     expect(ws().frames()).toEqual([{ type: "offer", sdp: "offer-sdp", prompt: "an astronaut", enable_prompt_expansion: true }]);
   });
 
+  it("closing while the socket is still opening: the orphan socket that opens later carries an empty message, not our offer", async () => {
+    installFakeBrowser();
+    const { conn } = begin();
+    await settle();
+    expect(FakeWebSocket.all).toHaveLength(1); // created, still CONNECTING, our offer is its pending message
+    conn.close();
+    await settle();
+    ws().open(); // the client opens it anyway (it cannot close a socket it has not seen open)
+    expect(ws().frames()).toEqual([{}]);
+    expect(JSON.stringify(ws().frames())).not.toContain("an astronaut");
+    expect(JSON.stringify(ws().frames())).not.toContain("offer-sdp");
+  });
+
+  it("closing after the service has replied sends nothing extra", async () => {
+    installFakeBrowser();
+    const { conn } = begin();
+    await settle();
+    ws().open();
+    ws().receive({ type: "answer", sdp: "answer-sdp" });
+    await settle();
+    const before = ws().frames().length;
+    conn.close();
+    await settle();
+    expect(ws().frames()).toHaveLength(before);
+  });
+
   it("does not let ICE candidates generated while the socket is still opening replace the offer; they follow it, in order, after the first reply", async () => {
     installFakeBrowser();
     begin();

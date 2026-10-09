@@ -200,6 +200,62 @@ describe("cleanup on every exit path", () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 
+  it("an answer that arrives but never connects fails as ice_failed after 30 s, not as 'no answer' at 20 s", async () => {
+    const { failure, last, states } = start();
+    await flush();
+    await answer();
+    pc().setState("connecting");
+    await vi.advanceTimersByTimeAsync(25_000); // past the 20 s answer deadline
+    expect(last()).toBe("connecting");
+    await vi.advanceTimersByTimeAsync(5_100);
+    expect(last()).toBe("failed");
+    expect(states.map(([s]) => s)).toEqual(["connecting", "failed"]);
+    expect(failure()).toMatchObject({ code: "ice_failed" });
+    released(1);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("connecting after the answer cancels both deadlines", async () => {
+    const { last } = start();
+    await flush();
+    await answer();
+    await vi.advanceTimersByTimeAsync(10_000);
+    pc().setState("connected");
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(last()).toBe("live");
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("close() while 'Reconnecting…' leaves no timer behind", async () => {
+    const { conn } = start();
+    await flush();
+    await answer();
+    pc().setState("connected");
+    pc().setState("disconnected");
+    expect(vi.getTimerCount()).toBeGreaterThan(0);
+    conn.close();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("closing before the service has replied overwrites the pending offer so an orphan socket cannot deliver it", async () => {
+    const { conn } = start();
+    await flush();
+    expect(sent().map((m) => m.type)).toEqual(["offer"]);
+    conn.close();
+    const frames = h.socket.send.mock.calls.map((c) => c[0]);
+    expect(frames[frames.length - 1]).toEqual({}); // the last thing handed to the client replaces the offer
+    expect(h.socket.close).toHaveBeenCalledTimes(1);
+  });
+
+  it("closing after the service has replied does not send anything extra", async () => {
+    const { conn } = start();
+    await flush();
+    await answer();
+    const before = h.socket.send.mock.calls.length;
+    conn.close();
+    expect(h.socket.send.mock.calls.length).toBe(before);
+  });
+
   it("model error message: fails with its message and releases everything", async () => {
     const { failure, last } = start();
     await flush();
@@ -272,9 +328,9 @@ describe("cleanup on every exit path", () => {
   it("nothing fires after close: late messages, timers and callbacks are ignored", async () => {
     const { conn, states } = start();
     await flush();
-    const sentBefore = sent().length;
     const before = states.length;
     conn.close();
+    const sentBefore = sent().length; // close() itself overwrites the pending offer with an empty message; nothing may follow that
     msg({ type: "answer", sdp: "late" });
     msg({ type: "error", message: "late error" });
     h.opts!.onError!({ message: "late socket error" });

@@ -218,7 +218,7 @@ export function Studio(p: StudioProps) {
         ) : (
           <Button variant="destructive" size="lg" onClick={() => void session.current?.stop()}><Square className="h-4 w-4" aria-hidden /> Stop</Button>
         )}
-        {sess.state === "connecting" && <Button variant="outline" size="lg" onClick={() => void session.current?.reconnect(inputs())} title={MESSAGES.reconnectHint}><RotateCcw className="h-4 w-4" aria-hidden /> Reconnect</Button>}
+        {sess.state === "connecting" && <Button variant="outline" size="lg" onClick={() => void session.current?.reconnect(inputs())}><RotateCcw className="h-4 w-4" aria-hidden /> Reconnect</Button>}
         {live && <Button variant="outline" size="lg" onClick={() => void session.current?.applyChanges(inputs())} disabled={sess.state !== "live"}>Apply changes</Button>}
         <Button variant="outline" size="lg" onClick={snapshot} disabled={sess.state !== "live"}><Aperture className="h-4 w-4" aria-hidden /> Snapshot</Button>
         {p.clipRecording ? (
@@ -228,6 +228,7 @@ export function Studio(p: StudioProps) {
         )}
         {sess.remaining <= 0 && <Link href="/billing" className={buttonClass({ variant: "gradient", size: "lg" })}>Top up credits</Link>}
       </div>
+      {sess.state === "connecting" && <p className="text-xs text-muted-foreground">{MESSAGES.reconnectHint}</p>}
 
       <div className="grid gap-6 rounded-lg border bg-card p-5 lg:grid-cols-[1fr_320px]">
         <div className="space-y-4">

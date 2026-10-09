@@ -215,6 +215,35 @@ describe("a connection that fails must not keep billing (item 1)", () => {
     expect(t.ends()).toHaveLength(2); // confirmed once: not retried again
   });
 
+  it("a Stop the server never heard about says so, and a Stop it confirmed shows nothing", async () => {
+    const down = setup({ routes: { [END]: () => { throw new TypeError("Failed to fetch"); } } });
+    await down.s.start(INPUTS);
+    await down.s.stop();
+    expect(down.s.view().state).toBe("idle");
+    expect(down.s.view().notice?.text).toMatch(/couldn't reach the server to close the session/i);
+
+    const up = setup();
+    await up.s.start(INPUTS);
+    await up.s.stop();
+    expect(up.s.view().notice).toBeNull();
+    expect(up.ends()).toEqual([{ sessionId: "s1", reason: "user" }]);
+  });
+
+  it("an unconfirmed Stop does not overwrite what the user is looking at once they have started again", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((r) => { release = r; });
+    let first = true;
+    const t = setup({ routes: { [END]: async () => { if (first) { first = false; await gate; throw new TypeError("Failed to fetch"); } return json(200, { remaining: 1, secondsBilled: 1 }); } } });
+    await t.s.start(INPUTS);
+    const stopping = t.s.stop();
+    await tick(0);
+    await t.s.start(INPUTS);
+    release();
+    await stopping;
+    expect(t.s.view().state).not.toBe("idle");
+    expect(t.s.view().notice?.text ?? "").not.toMatch(/couldn't reach the server to close/i);
+  });
+
   it("a server error answering the end call counts as unconfirmed too, a 404 does not", async () => {
     const t = setup({ routes: { [END]: () => json(500, { error: "Internal error" }) } });
     await t.s.start(INPUTS);

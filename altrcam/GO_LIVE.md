@@ -134,7 +134,8 @@ A bad signature returns 401, so a wrong secret shows up as webhook deliveries fa
 
 | Symptom | Likely cause |
 |---|---|
-| **Failed**, "The AI service didn't answer within 20 seconds" | wrong message names or offer fields, a sequence the service doesn't accept, or a server `Unauthorized` that the client swallows |
+| **Failed**, "The AI service didn't answer within 20 seconds" | no answer at all: wrong message names or offer fields, a sequence the service doesn't accept, or a server `Unauthorized` that the client swallows |
+| **Failed**, "Your browser couldn't set up a direct video connection" after about 30 s, and the answer did arrive | the answer was applied but ICE never connected: NAT, firewall or VPN, and no TURN server is used (the offer is made before the service can send its `ice_servers`) |
 | **Failed**, "The AI service reported an error: ..." | the service rejected the offer; the text is its own |
 | **Failed**, "...wouldn't allow the video connection because this session is no longer open" (403) | no active session: the `x-altrcam-session` header is missing/invalid, or the session already ended (credits, plan limit, sweep) |
 | **Failed**, "Couldn't get permission for the video connection..." | the token request got no usable answer: network, a 5xx from `/api/fal/proxy`, or a token response the code can't read |

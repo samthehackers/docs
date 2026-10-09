@@ -86,6 +86,8 @@ const ICE_SERVERS: RTCIceServer[] = [{ urls: "stun:stun.l.google.com:19302" }];
 const ANSWER_TIMEOUT_MS = 20000;
 /** How long the browser may stay "disconnected" before we give up on it (it usually recovers within seconds, or goes "failed"). */
 const DISCONNECT_GRACE_MS = 15000;
+/** After the answer is applied, how long ICE gets to connect before the attempt is given up. */
+const ICE_CONNECT_TIMEOUT_MS = 30000;
 const TOKEN_PROXY_URL = "/api/fal/proxy";
 const TOKEN_TARGET_URL = "https://rest.fal.ai/tokens/";
 /** Same lifetime the fal client asks for by default. The proxy refuses more than 300. */
@@ -137,6 +139,7 @@ export function connectLucy(o: ConnectOptions): LucyConnection {
   const pendingRemote: RTCIceCandidateInit[] = [];
   let answerTimer: ReturnType<typeof setTimeout> | undefined;
   let lostTimer: ReturnType<typeof setTimeout> | undefined;
+  let iceTimer: ReturnType<typeof setTimeout> | undefined;
   // Outgoing order: the offer, then everything in `outbox`, flushed once the offer is out AND the server has replied.
   const outbox: Outgoing[] = [];
   let offerSent = false;
@@ -173,11 +176,16 @@ export function connectLucy(o: ConnectOptions): LucyConnection {
     closed = true;
     clearTimeout(answerTimer);
     clearTimeout(lostTimer);
+    clearTimeout(iceTimer);
     outbox.length = 0;
     if (pc) {
       pc.onicecandidate = null; pc.ontrack = null; pc.onconnectionstatechange = null; // nothing may call back into us after this
       try { pc.close(); } catch { /* already closed */ }
     }
+    // The fal client keeps ONE pending message for a socket that is still opening and sends it when it opens, and it cannot
+    // close a socket it has not seen open. So if the offer is still the pending message (no reply yet), replace it with an
+    // empty one: otherwise the orphan socket delivers our offer (prompt and SDP) to a session that no longer exists.
+    if (offerSent && !replied) { try { socket.send({} as Outgoing); } catch { /* already closed */ } }
     try { socket.close(); } catch { /* already closed */ }
     pc = null;
   }
@@ -196,7 +204,7 @@ export function connectLucy(o: ConnectOptions): LucyConnection {
     conn.ontrack = (ev) => { if (ev.streams[0]) o.onRemoteStream(ev.streams[0]); };
     conn.onicecandidate = (ev) => { if (ev.candidate) enqueue({ type: "ice_candidate", candidate: ev.candidate.toJSON() }); };
     conn.onconnectionstatechange = () => {
-      if (conn.connectionState === "connected") { clearTimeout(answerTimer); clearTimeout(lostTimer); o.onState("live"); }
+      if (conn.connectionState === "connected") { clearTimeout(answerTimer); clearTimeout(iceTimer); clearTimeout(lostTimer); o.onState("live"); }
       else if (conn.connectionState === "failed") fail({ code: "ice_failed", message: "Connection failed" });
       else if (conn.connectionState === "disconnected") {
         o.onState("connecting", "Reconnecting…");
@@ -218,6 +226,8 @@ export function connectLucy(o: ConnectOptions): LucyConnection {
     answerTimer = setTimeout(() => fail({ code: "answer_timeout", message: "Timed out waiting for the model to answer" }), ANSWER_TIMEOUT_MS);
   }
 
+  const notConnected = () => !!pc && pc.connectionState !== "connected";
+
   async function handleIncoming(msg: Incoming) {
     if (closed) return;
     switch (msg.type) {
@@ -227,6 +237,10 @@ export function connectLucy(o: ConnectOptions): LucyConnection {
         if (!pc) return;
         try { await pc.setRemoteDescription({ type: "answer", sdp: msg.sdp }); } catch (e) { fail({ code: "bad_answer", message: `Could not apply the answer: ${errorText(e)}` }); return; }
         if (closed) return;
+        // The service answered, so "no answer" is no longer the failure to report. If ICE then never connects (NAT, firewall,
+        // VPN, no TURN) say so, instead of blaming the service for silence.
+        clearTimeout(answerTimer);
+        if (notConnected()) iceTimer = setTimeout(() => fail({ code: "ice_failed", message: "The connection was not established within 30 seconds of the answer" }), ICE_CONNECT_TIMEOUT_MS);
         remoteSet = true;
         for (const c of pendingRemote.splice(0)) await pc.addIceCandidate(c).catch(() => {});
         break;

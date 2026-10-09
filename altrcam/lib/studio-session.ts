@@ -216,7 +216,11 @@ export function createStudioSession(d: SessionDeps): StudioSession {
     sid = null;
     teardown();
     set({ state: "idle", notice: why.notice ?? null });
-    if (id) await endServerSession(id, why.reason ?? "user");
+    if (id) {
+      const ok = await endServerSession(id, why.reason ?? "user");
+      // A Stop the server never heard about leaves the session open until the sweep or the next start closes it: say so.
+      if (!ok && !disposed && view.state === "idle" && !view.notice) set({ notice: { tone: "error", text: MESSAGES.endUnconfirmed } });
+    }
   }
 
   async function start(i: StartInputs) {

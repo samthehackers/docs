@@ -33,7 +33,7 @@ One search-result summary of a fal article put Lucy realtime at about **$0.04 pe
 
 | Service | Do this | Gives you |
 |---|---|---|
-| **Supabase** | New project. Storage → create a **private** bucket named `uploads`. | `DATABASE_URL` (Settings → Database; pooler URL is fine), `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` |
+| **Supabase** | **Already done** for this deployment, see "The database" below. For another environment: new project, apply the migrations, create a **private** bucket named `uploads`. | `DATABASE_URL` (Dashboard → Connect → *Transaction pooler*, port 6543, with your database password), `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` (Settings → API; server only, never in a `NEXT_PUBLIC_` variable) |
 | **Clerk** | New app. Enable Email+password, Google, GitHub; optional TOTP. For production create a **Production instance** and add the DNS records Clerk asks for (this creates `clerk.<your-domain>`). | `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY` |
 | **Paystack** | Create two Plans (monthly, yearly). Amount and currency **must equal** `PRICE_PRO_MONTHLY` / `PRICE_PRO_YEARLY` / `PRICE_CURRENCY`, or renewals are recorded as rejected. | `PAYSTACK_SECRET_KEY`, `PAYSTACK_PUBLIC_KEY`, `PAYSTACK_PLAN_PRO_MONTHLY`, `PAYSTACK_PLAN_PRO_YEARLY` |
 | **NOWPayments** (optional) | API key and IPN secret. | `NOWPAYMENTS_API_KEY`, `NOWPAYMENTS_IPN_SECRET` |
@@ -42,6 +42,22 @@ One search-result summary of a fal article put Lucy realtime at about **$0.04 pe
 | **Upstash** | New Redis (REST). | `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN` |
 
 Also: `CRON_SECRET` (`openssl rand -hex 24`), `NEXT_PUBLIC_APP_URL` (the real https URL), `NEXT_PUBLIC_SUPPORT_EMAIL` (an inbox someone reads), `PRICING_APPROVED`.
+
+### The database (already created)
+
+Supabase project **`altrcam`**, ref `jyaxfxtaengddgdqohzp`, region **us-east-1** (next to Vercel's `iad1` functions), `SUPABASE_URL=https://jyaxfxtaengddgdqohzp.supabase.co`. It is on the organisation's **free plan**.
+
+What is already in place and checked:
+- Migrations `0000`-`0003` are applied (13 tables, row-level security on every one, no policies) and recorded in `drizzle.__drizzle_migrations`, so `npm run db:migrate` skips them. They were applied through Supabase's SQL API rather than the Drizzle runner, because the database password is not available to the tooling that created it.
+- The public API roles (`anon`, `authenticated`) have **no privileges** on the app's tables, now and for tables created later (migration `0004` holds this SQL; it was applied by hand, and `db:migrate` will run it once more harmlessly).
+- A **private** `uploads` bucket exists.
+- Supabase's security checks report only "RLS enabled, no policy" (13 times, which is the design: the API roles read nothing; the server connects as the database owner). Smoke-tested by inserting a user, ledger row, referral, plan config and session and rolling them back; the plan-limit CHECK constraint rejects out-of-bounds rows.
+
+What is still yours to do:
+- [ ] Copy the **Transaction pooler** connection string (with your database password) into Vercel as `DATABASE_URL`, and the **service_role** key as `SUPABASE_SERVICE_ROLE_KEY`, for **Production only**. Do not point Preview deployments at this database; use a separate Supabase project for previews.
+- [ ] **Free-plan limits:** the project is **paused after a week without activity**, and I believe the free plan has no automatic backups (check Settings → Database → Backups). Move to **Pro** before taking real users.
+- [ ] Run `npm run preflight` with the real variables. It checks the tables, RLS, the private bucket and the other services.
+- [ ] Future schema changes: `npm run db:generate`, review the SQL, then `npm run db:migrate` against the target database.
 
 ## 3. Check locally
 

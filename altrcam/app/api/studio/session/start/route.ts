@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { randomUUID } from "node:crypto";
-import { and, eq, isNull } from "drizzle-orm";
 import { handle, HttpError, parseBody, requireUserId } from "@/lib/api";
 import { rateLimit } from "@/lib/ratelimit";
 import { db } from "@/lib/db";
@@ -9,7 +8,7 @@ import { studioSessions } from "@/db/schema";
 import { getUserRow } from "@/lib/users";
 import { ledgerBalance } from "@/lib/credits";
 import { getPlan } from "@/lib/plan-config";
-import { meterSession } from "@/lib/metering";
+import { closeOpenSessions } from "@/lib/metering";
 import { capabilities } from "@/lib/config";
 
 const Body = z.object({ presetId: z.number().int().optional(), settings: z.record(z.unknown()).optional() });
@@ -24,9 +23,8 @@ export const POST = handle(async (req: Request) => {
   const bal = await ledgerBalance(db(), userId);
   if (bal.total <= 0) throw new HttpError(402, "Out of credits", { code: "no_credits" });
 
-  // One live session per user: settle and close any earlier one first.
-  const open = await db().select({ id: studioSessions.id }).from(studioSessions).where(and(eq(studioSessions.userId, userId), isNull(studioSessions.endedAt)));
-  for (const s of open) await meterSession(s.id, userId, { end: "superseded" });
+  // One live session per user: settle and close any earlier one first (a silent one is billed only to its last heartbeat).
+  await closeOpenSessions(userId);
 
   const plan = await getPlan(user.plan);
   const id = randomUUID();

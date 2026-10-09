@@ -87,7 +87,7 @@ Vercel's Hobby plan only allows daily crons (Vercel's documented limit; not trie
 - [ ] Actions tab → *AltrCam stale-session sweep* → **Run workflow** once. A green run logs `ok (HTTP 200): {"closed":N}`. A red run saying "rejected" means the secrets differ.
 - [ ] Check the Actions tab again after ~15 minutes: a run with event `schedule` should have appeared. **This repo is a fork**, and I believe GitHub does not run scheduled workflows on forks until you enable them there. Not verified.
 - Scheduled runs can be delayed or skipped under load (read "5 min" as roughly 5-15), and GitHub pauses schedules on a public repo after 60 days without activity. Billing does not depend on the sweep (heartbeats bill), but abandoned sessions stay open until it runs.
-- **Nothing alerts you if the sweep silently stops** (job skipped, runs dropped, schedules disabled on the fork, the 60-day pause). Look at the Actions tab now and then. While it is not running, a user whose tab crashed and who then starts a new session is billed the gap since their last heartbeat, up to their plan's session limit (see `README_LIMITATIONS.md`).
+- **Nothing alerts you if the sweep silently stops** (job skipped, runs dropped, schedules disabled on the fork, the 60-day pause). Look at the Actions tab now and then. While it is not running, an abandoned session stays open (and can still mint fal tokens) until its owner starts a new one, which closes it billed only up to its last heartbeat (see `README_LIMITATIONS.md`).
 - The same workflow can run `refill` or `retention` by hand if a Vercel cron ever misses a day.
 
 ## 5. Merge and deploy to a preview first

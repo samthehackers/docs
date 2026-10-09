@@ -24,6 +24,7 @@ import { db } from "@/lib/db";
 import { creditLedger, payments, studioSessions, transformations, users } from "@/db/schema";
 import { debitCredits, grantCredits, ledgerBalance } from "@/lib/credits";
 import { downgradeExpired, fulfilPayment, type FulfilInput } from "@/lib/payments/fulfil";
+import { closeOpenSessions } from "@/lib/metering";
 import { GET as refillRoute } from "@/app/api/cron/refill/route";
 import { GET as retentionRoute } from "@/app/api/cron/retention/route";
 import { GET as staleRoute } from "@/app/api/cron/stale-sessions/route";
@@ -146,6 +147,30 @@ suite("real PostgreSQL (production driver)", () => {
       expect(u.creditsMonthly + u.creditsPurchased).toBe(bal.total);
       const neg = await db().select().from(creditLedger).where(sql`${creditLedger.delta} > 0 and ${creditLedger.reason} = 'session'`);
       expect(neg).toHaveLength(0);
+    });
+  });
+  describe("starting a new session closes earlier ones the way the sweep would", () => {
+    it("bills a silent session only to its last heartbeat, a live one to now, and leaves other users alone", async () => {
+      await user("u"); await user("other");
+      await grantCredits(db(), "u", 5000, "monthly", "seed");
+      const mk = (userId: string, id: string, startedAgo: number, heartbeatAgo: number, billed: number) =>
+        db().insert(studioSessions).values({ id, userId, maxSeconds: 1800, startedAt: ago(startedAgo * 1000), lastHeartbeatAt: ago(heartbeatAgo * 1000), secondsBilled: billed });
+      const SILENT = "00000000-0000-4000-8000-0000000000a1", LIVE = "00000000-0000-4000-8000-0000000000a2", THEIRS = "00000000-0000-4000-8000-0000000000a3";
+      await mk("u", SILENT, 1200, 1080, 120);   // went quiet after 120 s, 18 minutes ago
+      await mk("other", THEIRS, 1200, 1080, 120);
+      const before = (await ledgerBalance(db(), "u")).total;
+      expect(await closeOpenSessions("u")).toBe(1);
+      const get = async (id: string) => (await db().select().from(studioSessions).where(eq(studioSessions.id, id)))[0];
+      expect(await get(SILENT)).toMatchObject({ endReason: "stale", secondsBilled: 120 });
+      expect((await ledgerBalance(db(), "u")).total).toBe(before);
+      expect((await get(THEIRS)).endedAt).toBeNull();
+
+      await mk("u", LIVE, 40, 5, 35);
+      expect(await closeOpenSessions("u")).toBe(1);
+      const live = await get(LIVE);
+      expect(live.endReason).toBe("superseded");
+      expect(live.secondsBilled).toBeGreaterThanOrEqual(40);
+      expect(live.secondsBilled).toBeLessThanOrEqual(42);
     });
   });
 });

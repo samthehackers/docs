@@ -9,7 +9,7 @@ interface Tier { key: "FREE" | "PRO" | "LIFETIME"; product?: ProductId; price: s
 
 export function tiers(): Tier[] {
   return [
-    { key: "FREE", price: "Free", cadence: "forever" },
+    { key: "FREE", price: "Free", cadence: "no card needed" },
     { key: "PRO", product: "PRO_MONTHLY", price: priceLabel("PRO_MONTHLY"), cadence: "per month", highlight: true, badge: "Subscription" },
     { key: "LIFETIME", product: "LIFETIME", price: priceLabel("LIFETIME"), cadence: "one time" },
   ];

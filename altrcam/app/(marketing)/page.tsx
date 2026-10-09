@@ -11,7 +11,8 @@ import { viewerId } from "@/lib/viewer";
 
 export const metadata = { title: { absolute: "AltrCam — Be anyone. Live." } };
 
-// Shows admin-edited plan limits: re-render at most once a minute instead of freezing the build-time values.
+// With Clerk configured this page is dynamic (the layout reads the session), so admin-edited plan limits show within the plan-config
+// cache time (about 15 s). With no Clerk it is static and revalidates every minute.
 export const revalidate = 60;
 
 const features = [
@@ -33,7 +34,7 @@ export default async function Landing() {
             Be anyone. <span className="gradient-text">Live.</span>
           </h1>
           <p className="mx-auto mt-6 max-w-xl text-lg text-muted-foreground">
-            AltrCam uses a realtime AI model to restyle your webcam video as you describe it: a character, a backdrop, an outfit or an art style. Write a prompt, press Go live, and watch the result in the studio.
+            AltrCam is built to restyle your webcam video with a realtime AI model as you describe it: a character, a backdrop, an outfit or an art style. You write a prompt, press Go live, and the result is meant to appear in the studio.
           </p>
           <div className="mt-10 flex flex-col items-center justify-center gap-3 sm:flex-row">
             <StudioCta signedIn={signedIn} />
@@ -71,7 +72,7 @@ export default async function Landing() {
           ].map(({ icon: Icon, t, b }) => (
             <div key={t}>
               <Icon className="h-5 w-5 text-accent" aria-hidden />
-              <h3 className="mt-3 font-semibold">{t}</h3>
+              <h2 className="mt-3 font-semibold">{t}</h2>
               <p className="mt-1 text-sm text-muted-foreground">{b}</p>
             </div>
           ))}

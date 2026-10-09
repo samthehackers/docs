@@ -1,5 +1,5 @@
 /**
- * What the public pages say about the live AI video, in one place (landing and how-it-works both show it).
+ * What the public pages say about the live AI video, in one place (landing, how-it-works, pricing, FAQ and billing show it).
  *
  * The realtime connection to the AI service has not been run end to end against the real service, so the site says so
  * instead of promising that going live works. Reword or remove this once a real session has been run and checked

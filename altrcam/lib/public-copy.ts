@@ -1,7 +1,6 @@
 import { CAPTURE_SIZE, type Plan, type PlanConfig } from "@/lib/plans";
+import { fmtSessionLimit } from "@/lib/account-summary";
 import { fmtNum } from "@/lib/utils";
-
-const mins = (s: number) => `${Math.round(s / 60)} min`;
 
 /** "A", "A and B", "A, B and C". */
 export function joinList(items: string[]): string {
@@ -14,8 +13,8 @@ export function planFeatures(p: PlanConfig): string[] {
   const { width, height } = CAPTURE_SIZE[p.maxResolution];
   return [
     `${fmtNum(p.monthlyCredits)} credits every month`,
-    `Sessions up to ${mins(p.maxSessionSeconds)}`,
-    `Camera captured at up to ${width}×${height}`,
+    `Sessions up to ${fmtSessionLimit(p.maxSessionSeconds)}`,
+    `Camera feed requested at ${width}×${height}`,
     `${p.presets} saved presets`,
     p.historyDays ? `${p.historyDays}-day history` : "No history expiry",
     p.clipRecording ? "Snapshots and clip recording" : "Snapshots (no clip recording)",
@@ -42,19 +41,27 @@ export interface BillingDetail { term: string; text: string; links?: { label: st
  * and the refund position. The facts mirror what checkout, the webhooks and the Terms actually do; change them together.
  * `yearlyPrice` is the label for Pro yearly ("TBA" when no price is configured).
  */
-export function billingDetails({ currency, yearlyPrice }: { currency: string; yearlyPrice: string }): BillingDetail[] {
+export const PAYMENT_METHODS_TEXT =
+  "Pro subscriptions are paid through Paystack; which payment methods it offers is up to Paystack and depends on your country. " +
+  "Lifetime and top-ups can be paid through Paystack or with cryptocurrency through NOWPayments.";
+
+export function billingDetails({ currency, yearlyPrice, pricesApproved }: { currency: string; yearlyPrice: string; pricesApproved: boolean }): BillingDetail[] {
   const yearly = yearlyPrice !== "TBA"
     ? ` Pro is also available as a yearly subscription for ${yearlyPrice}; choose it on the Billing page once you have an account.`
     : "";
   return [
     { term: "Renewal", text: `Pro renews automatically each period until you cancel.${yearly}` },
-    { term: "Cancelling", text: "Cancel any time from the Billing page. Pro stays active until the end of the period you already paid for; you are not charged again." },
-    { term: "Currency", text: `Prices are shown and charged in ${currency}. Amounts are not final until the pricing notice above is gone, and your bank may add its own conversion fees.` },
-    { term: "Payment methods", text: "Pro subscriptions are paid through Paystack, which offers cards and other methods depending on your country. Lifetime and top-ups can be paid through Paystack or with cryptocurrency through NOWPayments." },
-    { term: "Top-ups", text: "Top-up credits never expire. Your monthly credits are used first, then top-up credits. A one-time Lifetime purchase does not renew." },
+    { term: "Cancelling", text: "A Pro subscription can be cancelled from the Billing page (if no Cancel button shows, contact us). It stays active until the end of the period you already paid for; you are not charged again. Lifetime and top-ups are one-time purchases with nothing to cancel." },
+    {
+      term: "Currency",
+      text: `Card prices are shown and charged in ${currency}. Crypto amounts are quoted at checkout and network fees are extra. ${pricesApproved ? "" : "These amounts are not final yet. "}Your bank may add its own conversion fees.`,
+    },
+    { term: "Payment methods", text: PAYMENT_METHODS_TEXT },
+    { term: "Top-ups", text: "Top-up credits never expire. Your monthly credits are used first, then top-up credits." },
+    { term: "Lifetime", text: "A one-time payment with no renewal. The Terms do not yet say how long \"lifetime\" lasts." },
     {
       term: "Refunds",
-      text: "Payments are non-refundable except where the law requires otherwise. Refunds are not automatic: if something went wrong with a payment, contact support and it is reviewed by hand. The Terms page is still template text.",
+      text: "Payments are non-refundable except where the law requires otherwise. Refunds are not automatic: if something went wrong with a payment, contact us and it is reviewed by hand. The Terms page is still template text. See:",
       links: [{ label: "Terms", href: "/terms" }, { label: "Contact us", href: "/contact" }],
     },
   ];

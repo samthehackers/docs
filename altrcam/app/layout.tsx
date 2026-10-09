@@ -6,7 +6,7 @@ import "./globals.css";
 
 const url = process.env.NEXT_PUBLIC_APP_URL ?? "https://altrcam.com";
 const title = "AltrCam — Be anyone. Live.";
-const description = "AltrCam uses a realtime AI model to restyle your webcam video as you describe it: a character, a backdrop, an outfit or an art style.";
+const description = "AltrCam is built to restyle your webcam video with a realtime AI model: a character, a backdrop, an outfit or an art style. Live video has not been tested end to end yet.";
 
 export const metadata: Metadata = {
   metadataBase: new URL(url),

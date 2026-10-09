@@ -46,7 +46,7 @@ for (const vp of VIEWPORTS) {
 
     test("pricing: plans are readable and the 'not final' notice shows", async ({ page }) => {
       await page.goto("/pricing");
-      await expect(page.getByRole("note")).toContainText("Pricing is not final");
+      await expect(page.getByRole("note").filter({ hasText: "Pricing is not final" })).toHaveCount(1);
       for (const name of ["Free", "Pro", "Lifetime"]) await expect(page.getByRole("heading", { name, exact: true })).toBeVisible();
       expect(await overflowPx(page)).toBeLessThanOrEqual(0);
     });
@@ -59,13 +59,13 @@ for (const vp of VIEWPORTS) {
       expect(await overflowPx(page)).toBeLessThanOrEqual(0);
     });
 
-    test("the live-video status is visible without scrolling past the hero buttons, and the how-it-works strip fits", async ({ page }) => {
+    test("the live-video status is on the landing page, below the hero buttons, and the how-it-works strip fits", async ({ page }) => {
       await page.goto("/");
       const note = page.getByTestId("live-availability");
       await expect(note).toBeVisible();
       await expect(note).toContainText("hasn't been tested end to end");
       await expect(page.getByRole("heading", { name: "How it works", level: 2 })).toBeVisible();
-      for (const step of ["1. Allow your camera", "2. Pick a look", "3. Go live", "4. Pay by the second"]) await expect(page.getByRole("heading", { name: step })).toBeVisible();
+      for (const step of ["1. Allow your camera", "2. Pick a look", "3. Go live", "4. Credits by the second"]) await expect(page.getByRole("heading", { name: step })).toBeVisible();
       expect(await overflowPx(page)).toBeLessThanOrEqual(0);
     });
 
@@ -88,9 +88,9 @@ test.describe("content honesty", () => {
   test("the live video is not promised: the page says it is untested, and the removed claims stay gone", async ({ page }) => {
     for (const p of ["/", "/how-it-works", "/pricing", "/faq"]) {
       await page.goto(p);
-      await expect(page.locator("main")).not.toContainText(/your face, their look|post it anywhere|no waiting|instantly|popular|high resolution|standard resolution/i);
+      await expect(page.locator("main")).not.toContainText(/your face, their look|post it anywhere|no waiting|instantly|popular|high resolution|standard resolution|free forever|pay per second/i);
     }
-    for (const p of ["/", "/how-it-works"]) {
+    for (const p of ["/", "/how-it-works", "/pricing", "/faq"]) {
       await page.goto(p);
       await expect(page.getByTestId("live-availability")).toContainText("may not connect");
     }

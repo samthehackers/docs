@@ -10,8 +10,10 @@ import { renderToStaticMarkup } from "react-dom/server";
 import * as React from "react";
 import type { ReactElement } from "react";
 
-const h = vi.hoisted(() => ({ me: null as string | null, authCalls: 0, authThrows: false, plans: null as null | Record<string, unknown> }));
-vi.mock("@clerk/nextjs/server", () => ({ auth: async () => { h.authCalls++; if (h.authThrows) throw new Error("clerk down"); return { userId: h.me }; } }));
+const h = vi.hoisted(() => ({ me: null as string | null, authCalls: 0, authThrows: false as boolean | Error, plans: null as null | Record<string, unknown> }));
+// The Clerk widgets are stubbed so the sign-in and sign-up pages can be rendered here.
+vi.mock("@clerk/nextjs", () => ({ SignUp: () => "CLERK_SIGNUP_FORM", SignIn: () => "CLERK_SIGNIN_FORM" }));
+vi.mock("@clerk/nextjs/server", () => ({ auth: async () => { h.authCalls++; if (h.authThrows) throw h.authThrows instanceof Error ? h.authThrows : new Error("clerk down"); return { userId: h.me }; } }));
 // Plan limits come from the database in production; a test can hand the pages a specific set instead.
 vi.mock("@/lib/plan-config", async (orig) => {
   const real = await orig<typeof import("@/lib/plan-config")>();
@@ -23,6 +25,10 @@ import HowItWorks from "@/app/(marketing)/how-it-works/page";
 import Pricing from "@/app/(marketing)/pricing/page";
 import Faq from "@/app/(marketing)/faq/page";
 import MarketingLayout from "@/app/(marketing)/layout";
+import Privacy from "@/app/(marketing)/privacy/page";
+import SignUpPage from "@/app/(auth)/sign-up/[[...sign-up]]/page";
+import SignInPage from "@/app/(auth)/sign-in/[[...sign-in]]/page";
+import { StudioCta } from "@/components/studio-cta";
 import { DEFAULT_PLANS } from "@/lib/plans";
 import { PAYMENT_METHODS_TEXT } from "@/lib/public-copy";
 import { HOW_IT_WORKS_STEPS } from "@/components/how-it-works-steps";
@@ -35,6 +41,8 @@ beforeEach(() => {
   h.me = null; h.authCalls = 0; h.authThrows = false;
   h.plans = structuredClone(DEFAULT_PLANS); // the pages get these limits; no database is touched
   process.env.DATABASE_URL = "postgres://unused/ignored"; // "accounts are open" needs a database to be configured
+  process.env.PAYSTACK_SECRET_KEY = "sk_test_x"; // "checkout is open" needs a payment provider
+  process.env.CRON_SECRET = "cron_x"; // the monthly refill needs it, so "every month" can be promised
   process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY = "pk_test_x"; process.env.CLERK_SECRET_KEY = "sk_test_x";
   process.env.PRICE_PRO_MONTHLY = "1500000"; process.env.PRICE_PRO_YEARLY = "15000000"; process.env.PRICE_LIFETIME = "9900000";
   process.env.PRICE_TOPUP_1K = "300000"; process.env.PRICE_TOPUP_5K = "1200000"; process.env.PRICE_TOPUP_15K = "3000000";
@@ -157,12 +165,15 @@ describe("where the studio buttons go", () => {
     }
     expect(plain(await landing())).not.toContain("free credits every month");
   });
-  it("without Clerk configured the pages still render, signed out, and Clerk is never called", async () => {
+  it("without Clerk configured the pages still render, signed out, offer no sign-up button, and Clerk is never called", async () => {
     delete process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY; delete process.env.CLERK_SECRET_KEY;
     expect(await viewerId()).toBeNull();
-    const l = await landing();
-    expect(hrefs(l)).toContain("/sign-up");
-    expect((await how())).toContain("/sign-up");
+    for (const render of [landing, how]) {
+      const s = await render();
+      expect(hrefs(s)).not.toContain("/sign-up");
+      expect(plain(s)).toContain("Sign-up isn't open on this deployment yet.");
+      expect(plain(s)).not.toMatch(/Try it free|Sign up to open the studio/);
+    }
     expect(h.authCalls).toBe(0);
   });
   it("viewerId returns the user id when signed in and null when not", async () => {
@@ -301,6 +312,12 @@ describe("review follow-ups: the pages that ask for money, and sentences tied to
     expect(plain(await layout())).toContain("Get started");
     err.mockRestore();
   });
+  it("Next's own signals pass through viewerId (static-to-dynamic bailout, redirects) instead of being swallowed as 'signed out'", async () => {
+    h.authThrows = Object.assign(new Error("Dynamic server usage: headers"), { digest: "DYNAMIC_SERVER_USAGE" });
+    await expect(viewerId()).rejects.toMatchObject({ digest: "DYNAMIC_SERVER_USAGE" });
+    h.authThrows = Object.assign(new Error("NEXT_REDIRECT"), { digest: "NEXT_REDIRECT;replace;/sign-in;307;" });
+    await expect(viewerId()).rejects.toMatchObject({ digest: expect.stringContaining("NEXT_REDIRECT") });
+  });
   it("the sizes the pricing cards describe are the ones the Studio requests: it uses CAPTURE_SIZE, not its own copy", () => {
     const studio = readFileSync("components/studio/studio.tsx", "utf8");
     expect(studio).toMatch(/CAPTURE_SIZE\[p\.resolution\]/);
@@ -370,9 +387,112 @@ describe("what the pages promise when accounts are not open (the live deployment
     expect(t).not.toMatch(/Choose pro|Choose lifetime/);
   });
   it("Privacy and the support page say AltrCam does not record video, the same as the FAQ", () => {
-    expect(readFileSync("app/(marketing)/privacy/page.tsx", "utf8")).toMatch(/AltrCam does not record it/);
-    expect(readFileSync("app/(marketing)/privacy/page.tsx", "utf8")).not.toMatch(/not recorded by default/);
-    expect(readFileSync("components/troubleshooting.tsx", "utf8")).toMatch(/AltrCam does not record live video/);
+    const privacy = plain(html(Privacy() as ReactElement));
+    expect(privacy).toMatch(/AltrCam's servers do not record or store it\. What our AI provider does with video it receives is governed by its own terms/);
+    expect(privacy).not.toMatch(/not recorded by default/);
+    expect(readFileSync("components/troubleshooting.tsx", "utf8")).toMatch(/AltrCam's servers do not record or store live video/);
     expect(readFileSync("components/troubleshooting.tsx", "utf8")).not.toMatch(/not recorded by default/);
+  });
+});
+
+describe("one answer to 'is sign-up open', everywhere (review of the account-claim fix)", () => {
+  const ENVS = [
+    { name: "neither", clerk: false, db: false },
+    { name: "Clerk only", clerk: true, db: false },
+    { name: "database only", clerk: false, db: true },
+    { name: "Clerk and database", clerk: true, db: true },
+  ];
+  const setEnv = (e: { clerk: boolean; db: boolean }) => {
+    if (!e.clerk) { delete process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY; delete process.env.CLERK_SECRET_KEY; }
+    if (!e.db) delete process.env.DATABASE_URL;
+  };
+  for (const e of ENVS) {
+    it(`${e.name}: the landing page, how-it-works, pricing, header and both auth pages all agree`, async () => {
+      setEnv(e);
+      const open = e.clerk && e.db;
+      const l = await landing(), hw = await how(), pr = await pricing(), hd = await layout();
+      const su = html((await SignUpPage()) as ReactElement), si = html((await SignInPage()) as ReactElement);
+      if (open) {
+        expect(plain(su)).toContain("CLERK_SIGNUP_FORM");
+        expect(plain(si)).toContain("CLERK_SIGNIN_FORM");
+        expect(hrefs(l)).toContain("/sign-up"); expect(hrefs(hw)).toContain("/sign-up");
+        expect(plain(hd)).toContain("Get started"); expect(plain(hd)).toContain("Sign in");
+        expect(plain(pr)).toContain("Start free");
+        for (const s of [l, hw]) expect(plain(s)).not.toContain("Sign-up isn't open");
+      } else {
+        expect(plain(su)).toContain("Accounts aren't available on this deployment yet");
+        expect(plain(si)).toContain("Accounts aren't available on this deployment yet");
+        expect(plain(su)).not.toContain("CLERK_SIGNUP_FORM");
+        for (const s of [l, hw]) { expect(hrefs(s)).not.toContain("/sign-up"); expect(plain(s)).toContain("Sign-up isn't open on this deployment yet."); }
+        expect(hrefs(hd)).not.toContain("/sign-up"); expect(hrefs(hd)).not.toContain("/sign-in");
+        expect(plain(hd)).not.toMatch(/Get started|Sign in/);
+        expect(plain(pr)).toContain("Sign-up isn't open yet");
+        expect(plain(pr)).not.toContain("Start free");
+      }
+    });
+  }
+  it("partial Clerk configuration (one key) counts as not configured, on the landing page and the auth pages", async () => {
+    delete process.env.CLERK_SECRET_KEY;
+    expect(plain(await landing())).toContain("Sign-up isn't open on this deployment yet.");
+    expect(plain(html((await SignUpPage()) as ReactElement))).toContain("Accounts aren't available");
+    process.env.CLERK_SECRET_KEY = "sk_test_x"; delete process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY;
+    expect(plain(await landing())).toContain("Sign-up isn't open on this deployment yet.");
+  });
+  it("the closed notices are announced as status messages", async () => {
+    delete process.env.DATABASE_URL;
+    expect(await landing()).toMatch(/<p role="status"[^>]*>Sign-up isn&#x27;t open on this deployment yet\.<\/p>/);
+    expect(await how()).toMatch(/<p role="status"[^>]*>Sign-up isn&#x27;t open on this deployment yet\.<\/p>/);
+  });
+  it("StudioCta: a signed-out visitor gets no button when accounts are closed; a signed-in one always gets the studio", () => {
+    expect(StudioCta({ signedIn: false, accountsOpen: false })).toBeNull();
+    expect(hrefs(html(StudioCta({ signedIn: true, accountsOpen: false }) as ReactElement))).toEqual(["/studio"]);
+    expect(hrefs(html(StudioCta({ signedIn: false, accountsOpen: true }) as ReactElement))).toEqual(["/sign-up"]);
+  });
+  it("pricing: with accounts open but no payment provider, checkout buttons are replaced and the page says so", async () => {
+    delete process.env.PAYSTACK_SECRET_KEY;
+    const t = plain(await pricing());
+    expect(t).toContain("Checkout isn't open on this deployment yet.");
+    expect(t).toContain("Start free");
+    expect(t).not.toMatch(/Choose Pro|Choose Lifetime/);
+    expect(count(t, "Not available yet")).toBe(5); // Pro, Lifetime and three top-ups
+  });
+  it("pricing: with a payment provider the buttons are there and no checkout notice shows", async () => {
+    const t = plain(await pricing());
+    expect(t).toContain("Choose Pro");
+    expect(t).not.toContain("Checkout isn't open");
+    process.env.NOWPAYMENTS_API_KEY = "k"; delete process.env.PAYSTACK_SECRET_KEY;
+    expect(plain(await pricing())).toContain("Checkout isn't open"); // NOWPayments needs its IPN secret too
+    process.env.NOWPAYMENTS_IPN_SECRET = "s";
+    expect(plain(await pricing())).toContain("Choose Lifetime");
+  });
+  it("the pricing button names follow the plan's label, not a hard-coded word", async () => {
+    h.plans = { ...DEFAULT_PLANS, PRO: { ...DEFAULT_PLANS.PRO, label: "Plus" } };
+    expect(plain(await pricing())).toContain("Choose Plus");
+  });
+  it("free credits: 'every month' only when the refill job can run; nothing at all when the Free plan grants none", async () => {
+    expect(plain(await landing())).toContain("300 free credits every month. No card needed.");
+    delete process.env.CRON_SECRET;
+    const noCron = plain(await landing());
+    expect(noCron).toContain("300 free credits when you sign up. No card needed.");
+    expect(noCron).not.toContain("every month. No card");
+    h.plans = { ...DEFAULT_PLANS, FREE: { ...DEFAULT_PLANS.FREE, monthlyCredits: 0 } };
+    process.env.CRON_SECRET = "cron_x";
+    const zero = plain(await landing());
+    expect(zero).not.toMatch(/free credits/);
+    expect(zero).not.toMatch(/\b0 free/);
+  });
+  it("the old sentence promising an account is gone from every page that carried it (it was on five)", async () => {
+    const pages = [await landing(), await how(), await pricing(), html(Faq() as ReactElement)];
+    for (const p of pages) expect(plain(p)).not.toMatch(/create an account|look around/i);
+    expect(readFileSync("app/(app)/billing/page.tsx", "utf8")).not.toMatch(/create an account|look around/i);
+    expect(readFileSync("lib/availability.ts", "utf8")).not.toMatch(/create an account|look around/i);
+  });
+  it("with no credentials at all the pages render using the real plan fallback", async () => {
+    h.plans = null;
+    for (const k of ["NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY", "CLERK_SECRET_KEY", "DATABASE_URL", "PAYSTACK_SECRET_KEY", "CRON_SECRET"]) delete process.env[k];
+    const l = plain(await landing());
+    expect(l).toContain("Be anyone.");
+    expect(plain(await pricing())).toContain("Camera feed requested at 640×360"); // the default Free plan, from the code defaults
+    expect(h.authCalls).toBe(0);
   });
 });

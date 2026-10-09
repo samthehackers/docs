@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { capabilities, clerkConfigured } from "@/lib/config";
+import { accountsOpen, capabilities, clerkConfigured, paymentsOpen } from "@/lib/config";
 import { envIssues } from "@/lib/env";
 
 const saved = { ...process.env };
@@ -48,3 +48,35 @@ describe("envIssues", () => {
     expect(issues.join(" ")).not.toContain("do-not-leak");
   });
 });
+
+describe("accountsOpen and paymentsOpen", () => {
+  const set = (o: Record<string, string | undefined>) => Object.entries(o).forEach(([k, v]) => (v === undefined ? delete process.env[k] : (process.env[k] = v)));
+  const NONE = { NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: undefined, CLERK_SECRET_KEY: undefined, DATABASE_URL: undefined, PAYSTACK_SECRET_KEY: undefined, NOWPAYMENTS_API_KEY: undefined, NOWPAYMENTS_IPN_SECRET: undefined };
+  it("accounts need both Clerk keys AND a database: any one missing is closed", () => {
+    set(NONE);
+    expect(accountsOpen()).toBe(false);
+    set({ NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: "pk", CLERK_SECRET_KEY: "sk" });
+    expect(accountsOpen()).toBe(false); // Clerk alone would create logins that then fail at the first page
+    set({ DATABASE_URL: "postgres://x" });
+    expect(accountsOpen()).toBe(true);
+    set({ CLERK_SECRET_KEY: undefined });
+    expect(accountsOpen()).toBe(false);
+    set({ CLERK_SECRET_KEY: "sk", NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: undefined });
+    expect(accountsOpen()).toBe(false);
+    set({ NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: "pk", DATABASE_URL: "" });
+    expect(accountsOpen()).toBe(false); // empty counts as unset
+  });
+  it("checkout needs open accounts and a complete payment provider", () => {
+    set({ ...NONE, NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: "pk", CLERK_SECRET_KEY: "sk", DATABASE_URL: "postgres://x" });
+    expect(paymentsOpen()).toBe(false);
+    set({ PAYSTACK_SECRET_KEY: "p" });
+    expect(paymentsOpen()).toBe(true);
+    set({ PAYSTACK_SECRET_KEY: undefined, NOWPAYMENTS_API_KEY: "k" });
+    expect(paymentsOpen()).toBe(false);
+    set({ NOWPAYMENTS_IPN_SECRET: "s" });
+    expect(paymentsOpen()).toBe(true);
+    set({ DATABASE_URL: undefined });
+    expect(paymentsOpen()).toBe(false); // a provider without accounts is no checkout
+  });
+});
+

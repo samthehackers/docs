@@ -9,7 +9,7 @@ export const clerkConfigured = () => has("NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY", "C
 export function capabilities() {
   return {
     auth: clerkConfigured(),
-    database: has("DATABASE_URL"),
+    database: has("DATABASE_URL"), // presence only: a wrong, paused or unmigrated database is not detected
     storage: has("SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY"),
     liveTransformation: has("FAL_KEY"),
     paystack: has("PAYSTACK_SECRET_KEY"),
@@ -21,4 +21,14 @@ export function capabilities() {
     pricesApproved: process.env.PRICING_APPROVED === "true",
   };
 }
+/**
+ * Whether a visitor can really create and use an account: sign-in AND the database. Clerk alone would let someone create a login
+ * that then fails at the first app page (no database to hold their credits). This is environment presence only: a wrong, paused or
+ * unmigrated database is not detected. Every public page that offers sign-up uses this one answer, so they cannot disagree.
+ */
+export const accountsOpen = () => clerkConfigured() && has("DATABASE_URL");
+
+/** Whether checkout can work at all: accounts, and at least one payment provider. */
+export const paymentsOpen = () => accountsOpen() && (has("PAYSTACK_SECRET_KEY") || has("NOWPAYMENTS_API_KEY", "NOWPAYMENTS_IPN_SECRET"));
+
 export type Capabilities = ReturnType<typeof capabilities>;

@@ -18,7 +18,7 @@ vi.mock("@/lib/payments", () => ({ getProvider: () => ({ cancelSubscription: h.c
 
 const URL_ = process.env.TEST_DATABASE_URL;
 const suite = URL_ ? describe : describe.skip;
-if (URL_) { process.env.DATABASE_URL = URL_; process.env.PRICE_CURRENCY = "NGN"; }
+if (URL_) { process.env.DATABASE_URL = URL_; }
 
 import { db } from "@/lib/db";
 import { auditLog, subscriptions, users } from "@/db/schema";

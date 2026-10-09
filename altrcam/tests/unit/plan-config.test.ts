@@ -12,7 +12,6 @@ import { provisionUser } from "@/lib/users";
 let d: DB;
 beforeAll(async () => { d = await testDb(); }, 60_000);
 beforeEach(async () => {
-  process.env.PRICE_CURRENCY = "NGN";
   await d.execute(sql`truncate users, subscriptions, payments, webhook_events, credit_ledger, audit_log, notifications, plan_config restart identity cascade`);
 });
 

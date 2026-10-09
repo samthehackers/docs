@@ -4,8 +4,19 @@ import { db } from "@/lib/db";
 import { getProvider, type ProviderName } from "@/lib/payments";
 import type { VerifiedEvent, VerifiedPayment } from "@/lib/payments/provider";
 import { fulfilPayment, recordEvent, recordRejected } from "@/lib/payments/fulfil";
-import { expectedPrice, isProductId, PRODUCTS, type ProductId } from "@/lib/plans";
+import { isProductId, listPrice, PRODUCTS, type ProductId } from "@/lib/plans";
 import { notify } from "@/lib/notifications";
+
+/**
+ * What a payment must amount to: the pending row pinned at checkout (exact amount and currency, any discount included),
+ * or for a Paystack renewal (no pending row) the configured NGN list price of the plan.
+ */
+function expected(row: { amountMinor: number; currency: string } | undefined, product: ProductId) {
+  if (row) return { amountMinor: row.amountMinor, currency: row.currency };
+  const amountMinor = listPrice(product, "NGN");
+  if (amountMinor === null) throw new Error(`No NGN price configured for ${product}; cannot verify this payment`); // 500: the provider retries
+  return { amountMinor, currency: "NGN" };
+}
 
 /** Resolve who paid and for what. Our own pending row is authoritative; metadata/plan-code cover Paystack renewals. */
 async function resolve(v: VerifiedPayment) {
@@ -21,7 +32,7 @@ async function resolve(v: VerifiedPayment) {
     const [u] = await d.select({ id: users.id }).from(users).where(eq(users.email, v.customerEmail));
     userId = u?.id ?? null;
   }
-  return { userId, product: product && isProductId(product) ? (product as ProductId) : null };
+  return { row, userId, product: product && isProductId(product) ? (product as ProductId) : null };
 }
 
 export async function processWebhook(name: ProviderName, req: Request): Promise<{ status: number; body: string }> {
@@ -46,12 +57,12 @@ async function handlePaystack(ev: VerifiedEvent) {
       if (!ev.reference) return;
       const v = await getProvider("paystack").verifyTransaction(ev.reference);
       if (v.status !== "success") return;
-      const { userId, product } = await resolve(v);
+      const { row, userId, product } = await resolve(v);
       if (!userId || !product) {
         await recordEvent("paystack", ev.eventId, ev.type, { ...ev.payload, unresolved: true }, async () => {});
         return;
       }
-      const exp = expectedPrice(product);
+      const exp = expected(row, product);
       const input = { ...base, reference: v.reference, userId, product, amountMinor: v.amountMinor, currency: v.currency };
       if (v.amountMinor !== exp.amountMinor || v.currency !== exp.currency) return recordRejected(input, "amount/currency mismatch");
       // Subscription details (code/token) arrive on subscription.create and are linked there.
@@ -119,7 +130,7 @@ async function handleNowpayments(ev: VerifiedEvent) {
   }
   const v = await getProvider("nowpayments").verifyTransaction(ev.reference, { providerPaymentId: ev.providerPaymentId });
   if (v.status !== "success") return;
-  const exp = expectedPrice(product);
+  const exp = expected(row, product);
   const input = { ...base, reference: ev.reference, userId, product, amountMinor: v.amountMinor, currency: v.currency };
   if (v.amountMinor !== exp.amountMinor || v.currency !== exp.currency) return recordRejected(input, "amount/currency mismatch");
   await fulfilPayment(input);

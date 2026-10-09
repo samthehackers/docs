@@ -4,14 +4,14 @@ import { AvailabilityNotice } from "@/components/availability-notice";
 import { PricingNotice } from "@/components/pricing-notice";
 import { capabilities } from "@/lib/config";
 import { Card } from "@/components/ui/card";
-import { PricingCards, TopupList } from "@/components/pricing-cards";
+import { PricingCards, TopupList, type Tier, type TopupItem } from "@/components/pricing-cards";
 import { CancelButton, CheckoutButton } from "@/components/billing/checkout-button";
 import { requireAppUser } from "@/lib/session-user";
 import { db } from "@/lib/db";
 import { payments, subscriptions } from "@/db/schema";
-import { PRODUCTS, type ProductId } from "@/lib/plans";
+import { PRODUCTS, TOPUP_IDS, type ProductId } from "@/lib/plans";
 import { getPlans } from "@/lib/plan-config";
-import { priceLabel } from "@/lib/pricing";
+import { offerPrice, offersFor, payLabel } from "@/lib/pricing";
 import { money } from "@/lib/utils";
 
 export const metadata = { title: "Billing" };
@@ -24,12 +24,23 @@ export default async function Billing() {
     db().select().from(payments).where(eq(payments.userId, user.id)).orderBy(desc(payments.createdAt)).limit(50),
     db().select().from(subscriptions).where(and(eq(subscriptions.userId, user.id), eq(subscriptions.status, "active"))).limit(1),
   ]);
+  const caps = capabilities();
+  const open = { paystack: caps.paystack, nowpayments: caps.nowpayments };
+  const ctx = { plans, buyerPlan: user.plan };
+  const offers = (id: ProductId) => offersFor(id, ctx, open);
+  const pro = offers("PRO_MONTHLY"), yearly = offers("PRO_YEARLY"), lifetime = offers("LIFETIME");
+  const tiers: Tier[] = [
+    { key: "FREE", price: "Free", cadence: "no card needed" },
+    ...(pro.length || yearly.length ? [{ key: "PRO" as const, price: offerPrice((pro[0] ?? yearly[0])), cadence: pro.length ? "per month" : "per year", highlight: true, badge: "Subscription" }] : []),
+    ...(lifetime.length ? [{ key: "LIFETIME" as const, price: offerPrice(lifetime[0]), cadence: "one time" }] : []),
+  ];
+  const topups: TopupItem[] = TOPUP_IDS.flatMap((id) => { const o = offers(id); return o.length ? [{ id, price: offerPrice(o[0]) }] : []; });
   return (
     <div className="space-y-10">
       <h1 className="text-3xl font-bold">Billing</h1>
       <PricingNotice />
       <AvailabilityNotice />
-      {!capabilities().paystack && <p role="status" className="rounded-md border p-3 text-sm text-muted-foreground">Payments aren't available on this deployment yet, so checkout is disabled.</p>}
+      {!caps.paystack && <p role="status" className="rounded-md border p-3 text-sm text-muted-foreground">Payments aren't available on this deployment yet, so checkout is disabled.</p>}
 
       <Card className="flex flex-wrap items-center justify-between gap-4">
         <div>
@@ -44,23 +55,25 @@ export default async function Billing() {
       {user.plan !== "LIFETIME" && (
         <section>
           <h2 className="mb-4 text-xl font-semibold">Plans</h2>
-          <PricingCards plans={plans} current={user.plan} renderCta={(t) => {
-            if (!t.product) return <p className="text-sm text-muted-foreground">{user.plan === "FREE" ? "Your current plan" : "Downgrade by cancelling above"}</p>;
+          <PricingCards plans={plans} tiers={tiers} current={user.plan} renderCta={(t) => {
+            if (t.key === "FREE") return <p className="text-sm text-muted-foreground">{user.plan === "FREE" ? "Your current plan" : "Downgrade by cancelling above"}</p>;
             if (t.key === "PRO") return (
               <div className="space-y-2">
-                <CheckoutButton product="PRO_MONTHLY" label={`Pro monthly · ${priceLabel("PRO_MONTHLY")}`} />
-                <CheckoutButton product="PRO_YEARLY" variant="outline" label={`Pro yearly · ${priceLabel("PRO_YEARLY")}`} />
+                <CheckoutButton product="PRO_MONTHLY" options={pro.map((o) => ({ provider: o.provider, label: `Pro monthly · ${offerPrice(o)}` }))} />
+                <CheckoutButton product="PRO_YEARLY" variant="outline" options={yearly.map((o) => ({ provider: o.provider, label: `Pro yearly · ${offerPrice(o)}` }))} />
               </div>
             );
-            return <CheckoutButton product="LIFETIME" label="Get Lifetime" variant="outline" crypto />;
+            return <CheckoutButton product="LIFETIME" variant="outline" options={lifetime.map((o) => ({ provider: o.provider, label: payLabel(o) }))} />;
           }} />
         </section>
       )}
 
-      <section>
-        <h2 className="mb-4 text-xl font-semibold">Top up credits</h2>
-        <TopupList renderCta={(id: ProductId) => <CheckoutButton product={id} label="Buy" variant="outline" crypto />} />
-      </section>
+      {topups.length > 0 && (
+        <section>
+          <h2 className="mb-4 text-xl font-semibold">Top up credits</h2>
+          <TopupList items={topups} renderCta={(id: ProductId) => <CheckoutButton product={id} variant="outline" options={offers(id).map((o) => ({ provider: o.provider, label: payLabel(o) }))} />} />
+        </section>
+      )}
 
       <section>
         <h2 className="mb-4 text-xl font-semibold">Payment history</h2>

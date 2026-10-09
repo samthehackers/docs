@@ -50,7 +50,6 @@ const SESSION_B = "11111111-1111-4111-8111-111111111111";
 let presetB: number, historyB: number;
 
 beforeEach(async () => {
-  process.env.PRICE_CURRENCY = "NGN";
   h.me = null; h.admins = new Set();
   await d.execute(sql`truncate users, subscriptions, payments, webhook_events, credit_ledger, audit_log, notifications, studio_sessions, transformations, presets, support_tickets restart identity cascade`);
   await d.insert(users).values([{ id: "A", email: "a@x.co", name: "A" }, { id: "B", email: "b@x.co", name: "B" }, { id: "ADMIN", email: "admin@x.co", name: "Admin" }]);

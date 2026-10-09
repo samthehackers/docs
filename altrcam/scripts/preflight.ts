@@ -13,6 +13,7 @@ import { getTableName, is } from "drizzle-orm";
 import { PgTable } from "drizzle-orm/pg-core";
 import * as schema from "@/db/schema";
 import { env, type Env } from "@/lib/env";
+import { listPrice, PRODUCTS } from "@/lib/plans";
 
 type Level = "PASS" | "FAIL" | "WARN" | "SKIP";
 const rows: { name: string; level: Level; note: string }[] = [];
@@ -69,15 +70,18 @@ async function main() {
   });
 
   await check("Paystack plans exist and match your prices", async () => {
-    const plans: [string, string, number][] = [["monthly", cfg.PAYSTACK_PLAN_PRO_MONTHLY, cfg.PRICE_PRO_MONTHLY], ["yearly", cfg.PAYSTACK_PLAN_PRO_YEARLY, cfg.PRICE_PRO_YEARLY]];
-    const bad: string[] = [];
-    for (const [label, code, price] of plans) {
+    const plans: [string, string, "PRO_MONTHLY" | "PRO_YEARLY"][] = [["monthly", cfg.PAYSTACK_PLAN_PRO_MONTHLY, "PRO_MONTHLY"], ["yearly", cfg.PAYSTACK_PLAN_PRO_YEARLY, "PRO_YEARLY"]];
+    const bad: string[] = [], unpriced: string[] = [];
+    for (const [label, code, product] of plans) {
+      const price = listPrice(product, "NGN");
+      if (price === null) { unpriced.push(`${PRODUCTS[product].priceEnv.NGN} is unset, so Pro ${label} is not on sale`); continue; }
       const r = await fetch(`https://api.paystack.co/plan/${encodeURIComponent(code)}`, { headers: { Authorization: `Bearer ${cfg.PAYSTACK_SECRET_KEY}` } });
       const j = (await r.json().catch(() => ({}))) as { status?: boolean; data?: { amount: number; currency: string } };
       if (!r.ok || !j.status || !j.data) { bad.push(`${label}: plan ${code} not found`); continue; }
-      if (j.data.amount !== price || j.data.currency.toUpperCase() !== cfg.PRICE_CURRENCY) bad.push(`${label}: plan is ${j.data.amount} ${j.data.currency} but PRICE is ${price} ${cfg.PRICE_CURRENCY} (renewals would be REJECTED)`);
+      if (j.data.amount !== price || j.data.currency.toUpperCase() !== "NGN") bad.push(`${label}: plan is ${j.data.amount} ${j.data.currency} but ${PRODUCTS[product].priceEnv.NGN} is ${price} NGN (renewals would be REJECTED)`);
     }
     if (bad.length) return ["FAIL", bad.join("; ")];
+    if (unpriced.length) return ["WARN", unpriced.join("; ")];
   });
 
   await check("NOWPayments API key works", async () => {

@@ -1,8 +1,15 @@
 import { z } from "zod";
+import { parseMinor, PRICE_ENV_NAMES } from "@/lib/plans";
 
-const num = z.coerce.number().int().nonnegative();
+/**
+ * A price is optional (unset = that product is not on sale in that currency), but a value that is set must be a positive
+ * whole number of minor units: the same rule lib/plans.ts applies when it reads it, so a typo is reported, not silently hidden.
+ */
+const optionalPrice = z.string().optional().refine((v) => v === undefined || v.trim() === "" || parseMinor(v) !== null, { message: "must be a positive whole number of minor units (kobo / cents)" });
+const prices = Object.fromEntries(PRICE_ENV_NAMES.map((n) => [n, optionalPrice])) as Record<string, typeof optionalPrice>;
 
 const schema = z.object({
+  ...prices,
   NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: z.string().min(1),
   CLERK_SECRET_KEY: z.string().min(1),
   CLERK_WEBHOOK_SECRET: z.string().min(1),
@@ -21,13 +28,6 @@ const schema = z.object({
   UPSTASH_REDIS_REST_TOKEN: z.string().min(1),
   CRON_SECRET: z.string().min(16),
   NEXT_PUBLIC_APP_URL: z.string().url(),
-  PRICE_CURRENCY: z.enum(["NGN", "USD"]).default("NGN"),
-  PRICE_PRO_MONTHLY: num,
-  PRICE_PRO_YEARLY: num,
-  PRICE_LIFETIME: num,
-  PRICE_TOPUP_1K: num,
-  PRICE_TOPUP_5K: num,
-  PRICE_TOPUP_15K: num,
   EMAIL_FROM: z.string().default("AltrCam <hello@altrcam.com>"),
 });
 

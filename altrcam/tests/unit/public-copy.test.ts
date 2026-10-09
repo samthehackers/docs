@@ -71,7 +71,7 @@ describe("the sentence about saving", () => {
 });
 
 describe("billing details", () => {
-  const base = { currency: "NGN", yearlyPrice: "₦150,000", pricesApproved: false };
+  const base = { yearlyPrice: "₦150,000" as string | null, pricesApproved: false };
   const all = (d: ReturnType<typeof billingDetails>) => d.map((x) => `${x.term}: ${x.text}`).join("\n");
   it("covers renewal, cancelling, currency, payment methods, top-ups, Lifetime and refunds", () => {
     const d = billingDetails(base);
@@ -81,8 +81,9 @@ describe("billing details", () => {
     expect(t).toContain("A Pro subscription can be cancelled from the Billing page");
     expect(t).toContain("end of the period you already paid for");
     expect(t).toContain("nothing to cancel");
-    expect(t).toContain("Card prices are shown and charged in NGN");
-    expect(t).toContain("Crypto amounts are quoted at checkout");
+    expect(t).toContain("Card payments through Paystack are charged in Nigerian naira (NGN)");
+    expect(t).toContain("Crypto payments through NOWPayments are priced in US dollars (USD)");
+    expect(t).toContain("the amount of cryptocurrency is quoted at checkout");
     expect(t).toContain("never expire");
     expect(t).toContain("non-refundable except where the law requires otherwise");
     expect(d.find((x) => x.term === "Refunds")?.links?.map((l) => l.href)).toEqual(["/terms", "/contact"]);
@@ -97,7 +98,7 @@ describe("billing details", () => {
   });
   it("mentions the yearly option only when it has a price", () => {
     expect(all(billingDetails(base))).toContain("yearly subscription for ₦150,000");
-    const none = all(billingDetails({ ...base, yearlyPrice: "TBA" }));
+    const none = all(billingDetails({ ...base, yearlyPrice: null }));
     expect(none).not.toMatch(/yearly|TBA/i);
   });
   it("refers to prices not being final only while they are not approved, so the text never points at a notice that is gone", () => {
@@ -105,8 +106,10 @@ describe("billing details", () => {
     const approved = all(billingDetails({ ...base, pricesApproved: true }));
     expect(approved).not.toMatch(/not final|pricing notice/i);
   });
-  it("shows the configured currency", () => {
-    expect(all(billingDetails({ ...base, currency: "USD", yearlyPrice: "TBA" }))).toContain("charged in USD");
+  it("names the currency each provider charges: card in NGN, crypto priced in USD", () => {
+    const t = all(billingDetails({ ...base, yearlyPrice: null }));
+    expect(t).toMatch(/Paystack are charged in Nigerian naira \(NGN\)/);
+    expect(t).toMatch(/NOWPayments are priced in US dollars \(USD\)/);
   });
   it("is honest that Lifetime is not defined yet", () => {
     expect(billingDetails(base).find((x) => x.term === "Lifetime")!.text).toMatch(/do not yet say how long/);

@@ -1,11 +1,12 @@
 import Link from "next/link";
-import { PricingCards, TopupList } from "@/components/pricing-cards";
+import { PricingCards, TopupList, type Tier, type TopupItem } from "@/components/pricing-cards";
 import { buttonClass } from "@/components/ui/button";
 import { AvailabilityNotice } from "@/components/availability-notice";
 import { PricingNotice } from "@/components/pricing-notice";
 import { accountsOpen, paymentsOpen } from "@/lib/config";
 import { getPlans } from "@/lib/plan-config";
-import { priceCurrency, priceLabel, pricesApproved } from "@/lib/pricing";
+import { TOPUP_IDS, type ProductId } from "@/lib/plans";
+import { offer, offerPrice, pricesApproved } from "@/lib/pricing";
 import { billingDetails, SIGNUP_CLOSED } from "@/lib/public-copy";
 
 export const metadata = { title: "Pricing" };
@@ -17,7 +18,17 @@ export const revalidate = 60;
 export default async function Pricing() {
   const plans = await getPlans();
   const signupOpen = accountsOpen(), checkoutOpen = paymentsOpen();
-  const details = billingDetails({ currency: priceCurrency(), yearlyPrice: priceLabel("PRO_YEARLY"), pricesApproved: pricesApproved() });
+  const ctx = { plans };
+  // A product with no price (or, see lib/pricing.ts, no provable margin) is not on sale: it is not shown at all.
+  const shown = (id: ProductId) => offer(id, "NGN", ctx) ?? offer(id, "USD", ctx);
+  const pro = shown("PRO_MONTHLY"), lifetime = shown("LIFETIME"), yearly = shown("PRO_YEARLY");
+  const tiers: Tier[] = [
+    { key: "FREE", price: "Free", cadence: "no card needed" },
+    ...(pro ? [{ key: "PRO" as const, product: "PRO_MONTHLY" as const, price: offerPrice(pro), cadence: "per month", highlight: true, badge: "Subscription" }] : []),
+    ...(lifetime ? [{ key: "LIFETIME" as const, product: "LIFETIME" as const, price: offerPrice(lifetime), cadence: "one time" }] : []),
+  ];
+  const topups: TopupItem[] = TOPUP_IDS.flatMap((id) => { const o = shown(id); return o ? [{ id, price: offerPrice(o) }] : []; });
+  const details = billingDetails({ yearlyPrice: yearly ? offerPrice(yearly) : null, pricesApproved: pricesApproved() });
   return (
     <div className="mx-auto max-w-6xl px-4 py-16">
       <h1 className="text-center text-4xl font-bold">Simple pricing. <span className="gradient-text">Credits by the second.</span></h1>
@@ -25,8 +36,9 @@ export default async function Pricing() {
       <div className="mt-8"><PricingNotice /></div>
       <AvailabilityNotice className="mb-4" />
       {!checkoutOpen && <p role="status" className="mx-auto mb-4 max-w-xl text-center text-sm text-muted-foreground">{signupOpen ? "Checkout isn't open on this deployment yet." : `${SIGNUP_CLOSED} Checkout isn't open yet either.`}</p>}
+      {tiers.length === 1 && <p role="status" className="mx-auto mb-4 max-w-xl text-center text-sm text-muted-foreground">Paid plans aren't on sale yet.</p>}
       <div className="mt-4">
-        <PricingCards plans={plans} renderCta={(t) => {
+        <PricingCards plans={plans} tiers={tiers} renderCta={(t) => {
           if (t.product ? !checkoutOpen : !signupOpen) return <p className="text-center text-sm text-muted-foreground">{t.product ? "Not available yet" : "Sign-up isn't open yet"}</p>;
           return (
             <Link href={t.product ? "/billing" : "/sign-up"} prefetch={t.product ? false : undefined} className={buttonClass({ variant: t.highlight ? "gradient" : "outline", className: "w-full" })}>
@@ -35,8 +47,10 @@ export default async function Pricing() {
           );
         }} />
       </div>
-      <h2 className="mb-4 mt-16 text-xl font-semibold">Need more? Top up anytime.</h2>
-      <TopupList renderCta={() => checkoutOpen ? <Link href="/billing" prefetch={false} className={buttonClass({ variant: "outline", size: "sm" })}>Buy</Link> : <p className="text-xs text-muted-foreground">Not available yet</p>} />
+      {topups.length > 0 && <>
+        <h2 className="mb-4 mt-16 text-xl font-semibold">Need more? Top up anytime.</h2>
+        <TopupList items={topups} renderCta={() => checkoutOpen ? <Link href="/billing" prefetch={false} className={buttonClass({ variant: "outline", size: "sm" })}>Buy</Link> : <p className="text-xs text-muted-foreground">Not available yet</p>} />
+      </>}
       <h2 className="mb-4 mt-16 text-xl font-semibold">Billing details</h2>
       <dl className="grid gap-x-8 gap-y-4 text-sm sm:grid-cols-2">
         {details.map((d) => (

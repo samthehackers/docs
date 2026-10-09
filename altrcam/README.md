@@ -33,9 +33,9 @@ Env is validated with Zod at boot in production (`lib/env.ts`, `instrumentation.
 | `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN` | Rate limiting |
 | `CRON_SECRET` | ≥16 chars. Vercel sends it as `Authorization: Bearer …` to cron routes. The GitHub Actions stale-session sweep needs the **same value as a repo secret** (`GO_LIVE.md` section 4b) |
 | `NEXT_PUBLIC_APP_URL` | e.g. `https://altrcam.com` |
-| `PRICE_CURRENCY` (`NGN`\|`USD`), `PRICE_*` | Prices **in minor units** (kobo/cents). Webhooks compare paid amounts against these |
+| `PRICE_<PRODUCT>_NGN`, `PRICE_<PRODUCT>_USD` | Prices **in minor units** (kobo/cents), per currency: card (Paystack) charges NGN, crypto (NOWPayments) is priced in USD. A product whose price is unset is hidden and refused at checkout. Full list and the margin guard: `GO_LIVE.md`, "Pricing and payment variables" |
 
-Plan limits have defaults in [`lib/plans.ts`](./lib/plans.ts) and can be overridden by an admin (Admin → Plans) without a deploy; server code reads the effective values through `getPlans()`. Prices are env vars (`PRICE_*`); until `PRICING_APPROVED=true` the pricing pages say they aren't final.
+Plan limits have defaults in [`lib/plans.ts`](./lib/plans.ts) and can be overridden by an admin (Admin → Plans) without a deploy; server code reads the effective values through `getPlans()`. Prices are env vars (`PRICE_*_NGN` / `PRICE_*_USD`); until `PRICING_APPROVED=true` the pricing pages say they aren't final.
 
 ## Dashboard setup
 
@@ -50,7 +50,7 @@ Plan limits have defaults in [`lib/plans.ts`](./lib/plans.ts) and can be overrid
 3. Admin role = `publicMetadata.role = "admin"` (set by `npm run db:seed -- <email>`). It is re-checked server-side in every `/api/admin/*` handler, in the `/admin` page itself and inside every admin data function (`lib/admin.ts`), not only in the layout: Next.js renders a layout and its page in parallel, so a layout redirect alone does not protect the page's data. Tests call the page and each data function directly as a signed-out visitor, a normal user and an admin (`tests/unit/admin-gate.test.ts`); a source check fails if the page ever runs its own database query. This has not been exercised against real Clerk.
 
 **Paystack**
-1. Create two Plans (monthly, yearly) whose amounts equal `PRICE_PRO_MONTHLY` / `PRICE_PRO_YEARLY`; put the plan codes in env.
+1. Create two NGN Plans (monthly, yearly) whose amounts equal `PRICE_PRO_MONTHLY_NGN` / `PRICE_PRO_YEARLY_NGN`; put the plan codes in env.
 2. Settings → API & Webhooks → webhook URL `https://<domain>/api/webhooks/paystack`.
 
 **NOWPayments:** IPN callback `https://<domain>/api/webhooks/nowpayments`; set the IPN secret. Crypto is offered for Lifetime and top-ups only (no recurring).

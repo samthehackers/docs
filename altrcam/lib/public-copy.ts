@@ -39,22 +39,22 @@ export interface BillingDetail { term: string; text: string; links?: { label: st
 /**
  * The "Billing details" list on /pricing: renewal, cancellation, currency, which payment method covers what, what top-ups do,
  * and the refund position. The facts mirror what checkout, the webhooks and the Terms actually do; change them together.
- * `yearlyPrice` is the label for Pro yearly ("TBA" when no price is configured).
+ * `yearlyPrice` is the price label for Pro yearly, or null when Pro yearly is not on sale.
  */
 export const PAYMENT_METHODS_TEXT =
   "Pro subscriptions are paid through Paystack; which payment methods it offers is up to Paystack and depends on your country. " +
   "Lifetime and top-ups can be paid through Paystack or with cryptocurrency through NOWPayments.";
 
-export function billingDetails({ currency, yearlyPrice, pricesApproved }: { currency: string; yearlyPrice: string; pricesApproved: boolean }): BillingDetail[] {
-  const yearly = yearlyPrice !== "TBA"
-    ? ` Pro is also available as a yearly subscription for ${yearlyPrice}; choose it on the Billing page once you have an account.`
+export function billingDetails({ yearlyPrice, pricesApproved }: { yearlyPrice: string | null; pricesApproved: boolean }): BillingDetail[] {
+  const yearly = yearlyPrice
+    ? ` Pro is also available as a yearly subscription for ${yearlyPrice}.`
     : "";
   return [
     { term: "Renewal", text: `Pro renews automatically each period until you cancel.${yearly}` },
     { term: "Cancelling", text: "A Pro subscription can be cancelled from the Billing page (if no Cancel button shows, contact us). It stays active until the end of the period you already paid for; you are not charged again. Lifetime and top-ups are one-time purchases with nothing to cancel." },
     {
       term: "Currency",
-      text: `Card prices are shown and charged in ${currency}. Crypto amounts are quoted at checkout and network fees are extra. ${pricesApproved ? "" : "These amounts are not final yet. "}Your bank may add its own conversion fees.`,
+      text: `Card payments through Paystack are charged in Nigerian naira (NGN). Crypto payments through NOWPayments are priced in US dollars (USD); the amount of cryptocurrency is quoted at checkout and network fees are extra. ${pricesApproved ? "" : "These amounts are not final yet. "}Your bank may add its own conversion fees.`,
     },
     { term: "Payment methods", text: PAYMENT_METHODS_TEXT },
     { term: "Top-ups", text: "Top-up credits never expire. Your monthly credits are used first, then top-up credits." },

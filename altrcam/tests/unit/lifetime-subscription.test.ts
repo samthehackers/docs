@@ -18,7 +18,6 @@ import { ledgerBalance } from "@/lib/credits";
 let d: DB;
 beforeAll(async () => { d = await testDb(); }, 60_000);
 beforeEach(async () => {
-  process.env.PRICE_CURRENCY = "NGN";
   h.cancel.mockReset(); h.cancel.mockImplementation(async () => {});
   await d.execute(sql`truncate users, subscriptions, payments, webhook_events, credit_ledger, audit_log, notifications restart identity cascade`);
   await d.insert(users).values({ id: "u", email: "u@x.co", name: "U" });

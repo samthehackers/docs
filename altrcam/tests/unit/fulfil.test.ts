@@ -10,7 +10,6 @@ import { grantCredits, ledgerBalance, debitCredits, resetMonthly } from "@/lib/c
 let d: DB;
 beforeAll(async () => { d = await testDb(); }, 60_000);
 beforeEach(async () => {
-  process.env.PRICE_CURRENCY = "NGN";
   await d.execute(sql`truncate users, subscriptions, payments, webhook_events, credit_ledger, audit_log, notifications restart identity cascade`);
   await d.insert(users).values({ id: "u1", email: "a@b.co", name: "A" });
 });

@@ -32,7 +32,6 @@ beforeAll(async () => {
   d = await testDb(); h.db = d;
 }, 60_000);
 beforeEach(async () => {
-  process.env.PRICE_CURRENCY = "NGN";
   h.me = null; h.admins = new Set(["boss"]);
   await d.execute(sql`truncate users, payments, webhook_events, credit_ledger, audit_log, notifications, studio_sessions, support_tickets restart identity cascade`);
   await d.insert(users).values([{ id: "boss", email: "boss@x.co", name: "Boss" }, { id: "plain", email: "plain@x.co", name: "Plain" }, { id: "victim", email: "victim-private@x.co", name: "Victim" }]);

@@ -18,7 +18,7 @@ import { eq, sql } from "drizzle-orm";
 const URL_ = process.env.TEST_DATABASE_URL;
 const suite = URL_ ? describe : describe.skip;
 const SECRET = "integration-cron-secret-0123456789";
-if (URL_) { process.env.DATABASE_URL = URL_; process.env.CRON_SECRET = SECRET; process.env.PRICE_CURRENCY = "NGN"; }
+if (URL_) { process.env.DATABASE_URL = URL_; process.env.CRON_SECRET = SECRET; }
 
 import { db } from "@/lib/db";
 import { creditLedger, payments, studioSessions, transformations, users } from "@/db/schema";

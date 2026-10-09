@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { allocateDebit, computeMeter } from "@/lib/credits-math";
-import { DEFAULT_PLANS as PLANS, expectedPrice } from "@/lib/plans";
+import { DEFAULT_PLANS as PLANS, listPrice, PRICE_ENV_NAMES, PRODUCT_IDS, providerSells } from "@/lib/plans";
 
 describe("allocateDebit", () => {
   it("takes monthly first", () => {
@@ -48,11 +48,26 @@ describe("plan config", () => {
     expect(PLANS.PRO).toMatchObject({ monthlyCredits: 6000, maxSessionSeconds: 1800, presets: 100, historyDays: 365 });
     expect(PLANS.LIFETIME.historyDays).toBeNull();
   });
-  it("reads prices from env and rejects missing ones", () => {
-    process.env.PRICE_TOPUP_1K = "300000";
-    process.env.PRICE_CURRENCY = "NGN";
-    expect(expectedPrice("TOPUP_1K")).toEqual({ amountMinor: 300000, currency: "NGN" });
-    delete process.env.PRICE_LIFETIME;
-    expect(() => expectedPrice("LIFETIME")).toThrow();
+  it("reads prices per currency from env, at call time, and treats a missing or malformed one as 'no price'", () => {
+    const env = { PRICE_TOPUP_1K_NGN: "300000", PRICE_TOPUP_1K_USD: "250" };
+    expect(listPrice("TOPUP_1K", "NGN", env)).toBe(300000);
+    expect(listPrice("TOPUP_1K", "USD", env)).toBe(250);
+    expect(listPrice("LIFETIME", "NGN", env)).toBeNull();
+    for (const bad of ["", " ", "0", "-5", "12.5", "abc", "1e400"]) expect(listPrice("TOPUP_1K", "NGN", { PRICE_TOPUP_1K_NGN: bad }), bad).toBeNull();
+  });
+  it("names twelve price variables, NGN and USD for every product, and none of the old single-currency names", () => {
+    expect(PRICE_ENV_NAMES).toHaveLength(12);
+    expect(PRICE_ENV_NAMES).toEqual(expect.arrayContaining([
+      "PRICE_PRO_MONTHLY_NGN", "PRICE_PRO_MONTHLY_USD", "PRICE_PRO_YEARLY_NGN", "PRICE_PRO_YEARLY_USD", "PRICE_LIFETIME_NGN", "PRICE_LIFETIME_USD",
+      "PRICE_TOPUP_1K_NGN", "PRICE_TOPUP_1K_USD", "PRICE_TOPUP_5K_NGN", "PRICE_TOPUP_5K_USD", "PRICE_TOPUP_15K_NGN", "PRICE_TOPUP_15K_USD",
+    ]));
+    expect(PRICE_ENV_NAMES).not.toContain("PRICE_PRO_MONTHLY");
+  });
+  it("crypto (NOWPayments) never sells a subscription; card (Paystack) sells everything", () => {
+    for (const id of PRODUCT_IDS) expect(providerSells("paystack", id)).toBe(true);
+    expect(providerSells("nowpayments", "PRO_MONTHLY")).toBe(false);
+    expect(providerSells("nowpayments", "PRO_YEARLY")).toBe(false);
+    expect(providerSells("nowpayments", "LIFETIME")).toBe(true);
+    expect(providerSells("nowpayments", "TOPUP_5K")).toBe(true);
   });
 });

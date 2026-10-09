@@ -12,7 +12,6 @@ import { REFERRAL } from "@/lib/plans";
 let d: DB;
 beforeAll(async () => { d = await testDb(); }, 60_000);
 beforeEach(async () => {
-  process.env.PRICE_CURRENCY = "NGN";
   await d.execute(sql`truncate users, subscriptions, payments, webhook_events, credit_ledger, audit_log, notifications, referrals restart identity cascade`);
   await d.insert(users).values([
     { id: "ref", email: "ref@x.co", referralCode: "aaaaaaaa" },

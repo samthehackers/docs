@@ -36,6 +36,12 @@ import { LIVE_AVAILABILITY } from "@/lib/availability";
 import { viewerId } from "@/lib/viewer";
 
 beforeAll(() => { (globalThis as { React?: unknown }).React = React; }); // pages are JSX; Next compiles them with the automatic runtime
+/** Test prices only (minor units), not proposals. */
+const PRICES_FIXTURE = {
+  PRICE_PRO_MONTHLY_NGN: "1500000", PRICE_PRO_YEARLY_NGN: "15000000", PRICE_LIFETIME_NGN: "9900000", PRICE_LIFETIME_USD: "9900",
+  PRICE_TOPUP_1K_NGN: "300000", PRICE_TOPUP_5K_NGN: "1200000", PRICE_TOPUP_15K_NGN: "3000000",
+  PRICE_TOPUP_1K_USD: "300", PRICE_TOPUP_5K_USD: "1200", PRICE_TOPUP_15K_USD: "3000",
+};
 const ENV = { ...process.env };
 beforeEach(() => {
   h.me = null; h.authCalls = 0; h.authThrows = false;
@@ -44,9 +50,7 @@ beforeEach(() => {
   process.env.PAYSTACK_SECRET_KEY = "sk_test_x"; // "checkout is open" needs a payment provider
   process.env.CRON_SECRET = "cron_x"; // the monthly refill needs it, so "every month" can be promised
   process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY = "pk_test_x"; process.env.CLERK_SECRET_KEY = "sk_test_x";
-  process.env.PRICE_PRO_MONTHLY = "1500000"; process.env.PRICE_PRO_YEARLY = "15000000"; process.env.PRICE_LIFETIME = "9900000";
-  process.env.PRICE_TOPUP_1K = "300000"; process.env.PRICE_TOPUP_5K = "1200000"; process.env.PRICE_TOPUP_15K = "3000000";
-  process.env.PRICE_CURRENCY = "NGN";
+  Object.assign(process.env, PRICES_FIXTURE);
   delete process.env.PRICING_APPROVED;
 });
 afterEach(() => { process.env = { ...ENV }; });
@@ -201,7 +205,7 @@ describe("the pricing page", () => {
     expect(hrefs(await pricing())).toEqual(expect.arrayContaining(["/terms", "/contact"]));
   });
   it("does not mention a yearly option when it has no price", async () => {
-    delete process.env.PRICE_PRO_YEARLY;
+    delete process.env.PRICE_PRO_YEARLY_NGN;
     expect(plain(await pricing())).not.toMatch(/yearly/i);
   });
   it("still shows the 'prices are not final' notice until the owner approves them, and only once", async () => {
@@ -286,11 +290,24 @@ describe("review follow-ups: the pages that ask for money, and sentences tied to
     expect(t).toContain("Recording a clip to download is included in Pro.");
     expect(t).not.toContain("Pro and Lifetime");
   });
-  it("prices are shown in the configured currency", async () => {
-    process.env.PRICE_CURRENCY = "USD";
+  it("card prices are shown in NGN from the per-currency variables, and nothing is ever 'TBA'", async () => {
     const t = plain(await pricing());
-    expect(t).toContain("charged in USD");
-    expect(t).not.toMatch(/charged in NGN/);
+    expect(t).toMatch(/(₦|NGN\s?)15,000 per month/); // PRICE_PRO_MONTHLY_NGN (Node's Intl writes "NGN 15,000")
+    expect(t).toMatch(/(₦|NGN\s?)99,000 one time/); // PRICE_LIFETIME_NGN
+    expect(t).not.toContain("TBA");
+  });
+  it("a product with no price is hidden, not shown as 'TBA'; with no paid prices at all the page says paid plans aren't on sale", async () => {
+    delete process.env.PRICE_LIFETIME_NGN; delete process.env.PRICE_LIFETIME_USD;
+    let p = await pricing();
+    expect(p).not.toContain(">Lifetime</h3>");
+    expect(p).toContain(">Pro</h3>");
+    expect(plain(p)).not.toMatch(/TBA|Choose Lifetime/);
+    for (const k of Object.keys(process.env)) if (k.startsWith("PRICE_")) delete process.env[k];
+    p = await pricing();
+    expect(p).toContain(">Free</h3>");
+    expect(p).not.toMatch(/>Pro<\/h3>|>Lifetime<\/h3>/);
+    expect(plain(p)).toContain("Paid plans aren't on sale yet.");
+    expect(plain(p)).not.toMatch(/Need more\? Top up|TBA/);
   });
   it("the page headline and the first step no longer sell 'pay per second' for what is a monthly plan with an allowance", async () => {
     const t = plain(await pricing());

@@ -27,7 +27,7 @@ cost of a fully used Pro month = 6,000 × (fal $ per second)
 One search-result summary of a fal article put Lucy realtime at about **$0.04 per second of processed video**. I could not open fal's pricing page from the build environment, so **treat that as unverified and check fal's current price yourself**. If it is right, a free signup that uses all its credits costs ~$12 and a fully used Pro month ~$240, which no plausible subscription price covers. Confirm the real price, then:
 
 - set allowances in **Admin → Plans** (no deploy needed; changes take effect within ~15 s and are audited);
-- set prices with `PRICE_*` env vars (minor units: kobo/cents) and set `PRICING_APPROVED=true`. Until then pricing and billing show a "Pricing is not final" notice. The values in `.env.example` are placeholders, not recommendations.
+- set prices per currency with the `PRICE_*_NGN` / `PRICE_*_USD` env vars (minor units: kobo/cents; see "Pricing and payment variables" below) and set `PRICING_APPROVED=true`. Until then pricing and billing show a "Pricing is not final" notice. A product with no price is not shown and cannot be bought.
 
 ## 2. Create the services
 
@@ -35,13 +35,32 @@ One search-result summary of a fal article put Lucy realtime at about **$0.04 pe
 |---|---|---|
 | **Supabase** | **Already done** for this deployment, see "The database" below. For another environment: new project, apply the migrations, create a **private** bucket named `uploads`. | `DATABASE_URL` (Dashboard → Connect → *Transaction pooler*, port 6543, with your database password), `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` (Settings → API; server only, never in a `NEXT_PUBLIC_` variable) |
 | **Clerk** | New app. Enable Email+password, Google, GitHub; optional TOTP. For production create a **Production instance** and add the DNS records Clerk asks for (this creates `clerk.<your-domain>`). | `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY` |
-| **Paystack** | Create two Plans (monthly, yearly). Amount and currency **must equal** `PRICE_PRO_MONTHLY` / `PRICE_PRO_YEARLY` / `PRICE_CURRENCY`, or renewals are recorded as rejected. | `PAYSTACK_SECRET_KEY`, `PAYSTACK_PUBLIC_KEY`, `PAYSTACK_PLAN_PRO_MONTHLY`, `PAYSTACK_PLAN_PRO_YEARLY` |
+| **Paystack** | Create two Plans (monthly, yearly) in **NGN**. Their amounts **must equal** `PRICE_PRO_MONTHLY_NGN` / `PRICE_PRO_YEARLY_NGN`, or renewals are recorded as rejected. | `PAYSTACK_SECRET_KEY`, `PAYSTACK_PUBLIC_KEY`, `PAYSTACK_PLAN_PRO_MONTHLY`, `PAYSTACK_PLAN_PRO_YEARLY` |
 | **NOWPayments** (optional) | API key and IPN secret. | `NOWPAYMENTS_API_KEY`, `NOWPAYMENTS_IPN_SECRET` |
 | **fal.ai** | API key. | `FAL_KEY` |
 | **Resend** | Add and verify your sending domain. | `RESEND_API_KEY`; set `EMAIL_FROM` on that domain |
 | **Upstash** | New Redis (REST). | `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN` |
 
-Also: `CRON_SECRET` (`openssl rand -hex 24`), `NEXT_PUBLIC_APP_URL` (the real https URL), `NEXT_PUBLIC_SUPPORT_EMAIL` (an inbox someone reads), `PRICING_APPROVED`.
+Also: `CRON_SECRET` (`openssl rand -hex 24`), `NEXT_PUBLIC_APP_URL` (the real https URL), `NEXT_PUBLIC_SUPPORT_EMAIL` (an inbox someone reads), `PRICING_APPROVED`, and the pricing variables below.
+
+<!-- BEGIN pricing-env (stream A4: pricing, checkout, Lifetime). Keep this block together; it may move to docs/SETUP.md. -->
+### Pricing and payment variables
+
+All optional: the site runs without them, it just sells nothing that is not fully configured. Read at request time, so a change applies on the next request after Vercel picks up the new value (redeploy if in doubt).
+
+**Prices**, in **minor units** (kobo for NGN, cents for USD), whole numbers only. A value that is set but malformed (`15000.50`, `abc`, `0`) counts as unset and is reported by `npm run preflight`.
+
+| Variable | Used for |
+|---|---|
+| `PRICE_PRO_MONTHLY_NGN`, `PRICE_PRO_YEARLY_NGN` | Pro by card (Paystack charges NGN). Must equal the amounts of the Paystack plans `PAYSTACK_PLAN_PRO_MONTHLY` / `PAYSTACK_PLAN_PRO_YEARLY` |
+| `PRICE_LIFETIME_NGN`, `PRICE_TOPUP_1K_NGN`, `PRICE_TOPUP_5K_NGN`, `PRICE_TOPUP_15K_NGN` | Lifetime and top-ups by card (Paystack, NGN) |
+| `PRICE_LIFETIME_USD`, `PRICE_TOPUP_1K_USD`, `PRICE_TOPUP_5K_USD`, `PRICE_TOPUP_15K_USD` | Lifetime and top-ups with crypto (NOWPayments invoices are priced in USD) |
+| `PRICE_PRO_MONTHLY_USD`, `PRICE_PRO_YEARLY_USD` | **Not used for checkout today**: no provider here charges a subscription in USD (Paystack plans are NGN; crypto has no recurring billing). Leave unset |
+
+- A product (in a currency) whose price is unset is **hidden** on `/pricing` and `/billing` and **refused by checkout** (409, nothing charged). There is no "TBA" any more.
+- The old single-currency names (`PRICE_CURRENCY`, `PRICE_PRO_MONTHLY`, `PRICE_PRO_YEARLY`, `PRICE_LIFETIME`, `PRICE_TOPUP_1K`, `PRICE_TOPUP_5K`, `PRICE_TOPUP_15K`) were never set on any deployment, so nothing reads them and there is no backward compatibility. Delete them if you added them anywhere.
+- Every payment is verified against the **pending row** written at checkout, which pins the user, product, exact amount and currency. Paystack renewals have no pending row and are checked against the configured NGN price of the plan.
+<!-- END pricing-env (stream A4) -->
 
 ### The database (already created)
 

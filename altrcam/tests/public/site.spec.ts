@@ -44,10 +44,13 @@ for (const vp of VIEWPORTS) {
       });
     }
 
-    test("pricing: plans are readable and the 'not final' notice shows", async ({ page }) => {
+    test("pricing: with no prices configured only Free is shown, nothing says 'TBA', and the 'not final' notice shows", async ({ page }) => {
       await page.goto("/pricing");
       await expect(page.getByRole("note").filter({ hasText: "Pricing is not final" })).toHaveCount(1);
-      for (const name of ["Free", "Pro", "Lifetime"]) await expect(page.getByRole("heading", { name, exact: true })).toBeVisible();
+      await expect(page.getByRole("heading", { name: "Free", exact: true })).toBeVisible();
+      for (const name of ["Pro", "Lifetime"]) await expect(page.getByRole("heading", { name, exact: true })).toHaveCount(0);
+      await expect(page.locator("main")).toContainText("Paid plans aren't on sale yet.");
+      await expect(page.locator("main")).not.toContainText("TBA");
       expect(await overflowPx(page)).toBeLessThanOrEqual(0);
     });
 
@@ -108,8 +111,7 @@ test.describe("content honesty", () => {
     }
     await page.goto("/pricing");
     await expect(page.locator("main")).toContainText("Sign-up isn't open yet");
-    await expect(page.locator("main")).toContainText("Not available yet");
-    await expect(page.locator("main a[href='/billing']")).toHaveCount(0);
+    await expect(page.locator("main a[href^='/billing']")).toHaveCount(0);
   });
   test("the sign-up and sign-in pages say accounts aren't available, the same as the pages that link to them", async ({ page }) => {
     for (const p of ["/sign-up", "/sign-in"]) {

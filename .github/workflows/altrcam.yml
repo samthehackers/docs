@@ -70,13 +70,13 @@ jobs:
       UPSTASH_REDIS_REST_TOKEN: x
       CRON_SECRET: 0123456789abcdef0123
       NEXT_PUBLIC_APP_URL: http://localhost:3000
-      PRICE_CURRENCY: NGN
-      PRICE_PRO_MONTHLY: "1500000"
-      PRICE_PRO_YEARLY: "15000000"
-      PRICE_LIFETIME: "45000000"
-      PRICE_TOPUP_1K: "300000"
-      PRICE_TOPUP_5K: "1200000"
-      PRICE_TOPUP_15K: "3000000"
+      # Test prices (minor units), not proposals. The e2e verifies against the pending row it inserts.
+      PRICE_PRO_MONTHLY_NGN: "1500000"
+      PRICE_PRO_YEARLY_NGN: "15000000"
+      PRICE_LIFETIME_NGN: "45000000"
+      PRICE_TOPUP_1K_NGN: "300000"
+      PRICE_TOPUP_5K_NGN: "1200000"
+      PRICE_TOPUP_15K_NGN: "3000000"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

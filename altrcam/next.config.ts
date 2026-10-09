@@ -1,19 +1,7 @@
 import type { NextConfig } from "next";
+import { buildCsp } from "./lib/csp";
 
-const csp = [
-  "default-src 'self'",
-  "script-src 'self' 'unsafe-inline' https://*.clerk.accounts.dev https://*.clerk.com https://challenges.cloudflare.com https://js.paystack.co",
-  "style-src 'self' 'unsafe-inline'",
-  "img-src 'self' data: blob: https://img.clerk.com https://*.supabase.co",
-  "media-src 'self' blob: https://*.supabase.co",
-  "font-src 'self' data:",
-  "connect-src 'self' https://*.clerk.accounts.dev https://*.clerk.com https://*.fal.ai https://*.fal.run wss://*.fal.run wss://*.fal.ai https://*.supabase.co https://api.paystack.co stun: turn: wss:",
-  "frame-src https://*.clerk.accounts.dev https://*.clerk.com https://challenges.cloudflare.com https://checkout.paystack.com https://js.paystack.co",
-  "worker-src 'self' blob:",
-  "frame-ancestors 'none'",
-  "base-uri 'self'",
-  "form-action 'self'",
-].join("; ");
+const csp = buildCsp({ clerkPublishableKey: process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY });
 
 const config: NextConfig = {
   outputFileTracingRoot: __dirname,

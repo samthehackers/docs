@@ -34,8 +34,7 @@ for (const vp of VIEWPORTS) {
         await expect(page.locator("html")).toHaveAttribute("lang", "en");
         expect((await page.title()).length, "title").toBeGreaterThan(0);
         await expect(page.locator("main")).toHaveCount(1);
-        await expect(page.locator("h1, p.gradient-text").first()).toBeVisible();
-        if (path !== "/sign-in" && path !== "/sign-up") await expect(page.locator("h1")).toHaveCount(1);
+        await expect(page.locator("h1")).toHaveCount(1); // the auth pages' h1 is visually hidden, but it is there
         const unlabelled = await page.evaluate(() => [...document.querySelectorAll("button, a")].filter((el) => !(el.textContent ?? "").trim() && !el.getAttribute("aria-label") && !el.querySelector("img[alt]")).length);
         expect(unlabelled, "buttons/links with no accessible name").toBe(0);
 
@@ -116,6 +115,19 @@ test.describe("content honesty", () => {
       await page.goto(p);
       await expect(page.getByRole("status")).toContainText("Accounts aren't available on this deployment yet");
     }
+  });
+  test("the auth pages lead back home and to Privacy; the sign-up page's heading is there even while closed", async ({ page }) => {
+    await page.goto("/sign-up");
+    await expect(page.getByRole("heading", { level: 1, name: "Create your account" })).toHaveCount(1);
+    await expect(page.getByRole("link", { name: "Back to home" })).toHaveAttribute("href", "/");
+    await expect(page.getByRole("link", { name: "Privacy" })).toHaveAttribute("href", "/privacy");
+    await page.goto("/sign-in");
+    await expect(page.getByRole("heading", { level: 1, name: "Sign in" })).toHaveCount(1);
+    await expect(page.getByRole("link", { name: "Privacy" })).toHaveAttribute("href", "/privacy");
+  });
+  test("the acceptable-use link target exists on the Terms page", async ({ page }) => {
+    await page.goto("/terms#acceptable-use");
+    await expect(page.locator("#acceptable-use")).toHaveText("2. Acceptable use");
   });
   test("terms and privacy are clearly marked as templates", async ({ page }) => {
     for (const p of ["/terms", "/privacy"]) {

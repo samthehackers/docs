@@ -15,3 +15,15 @@ export const PROTECTED_ROUTES = [
   "/dashboard(.*)", "/studio(.*)", "/history(.*)", "/presets(.*)", "/referrals(.*)",
   "/billing(.*)", "/settings(.*)", "/support(.*)", "/admin(.*)", "/api/(.*)",
 ];
+
+/**
+ * Where Clerk sends people, hard-coded so nothing depends on the NEXT_PUBLIC_CLERK_*_URL variables (set here, they win over those).
+ * ClerkProvider (app/layout.tsx) takes all four; clerkMiddleware (middleware.ts) takes the two page URLs. After signing in or
+ * signing up, people land on the dashboard unless they were on their way somewhere (Clerk's redirect_url).
+ */
+export const AUTH_URLS = {
+  signInUrl: "/sign-in",
+  signUpUrl: "/sign-up",
+  signInFallbackRedirectUrl: "/dashboard",
+  signUpFallbackRedirectUrl: "/dashboard",
+} as const;

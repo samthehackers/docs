@@ -4,7 +4,7 @@ import { clerkConfigured } from "@/lib/config";
 import { REFERRAL } from "@/lib/plans";
 import { makeRefCookie, parseRefCookie } from "@/lib/referral-cookie";
 
-import { PROTECTED_ROUTES, PUBLIC_ROUTES } from "@/lib/routes";
+import { AUTH_URLS, PROTECTED_ROUTES, PUBLIC_ROUTES } from "@/lib/routes";
 
 const isPublic = createRouteMatcher(PUBLIC_ROUTES);
 const isProtected = createRouteMatcher(PROTECTED_ROUTES);
@@ -28,7 +28,7 @@ const withClerk = clerkMiddleware(async (auth, req) => {
       return res;
     }
   }
-});
+}, { signInUrl: AUTH_URLS.signInUrl, signUpUrl: AUTH_URLS.signUpUrl });
 
 // Without Clerk keys, public pages still serve and protected ones say why they are unavailable.
 // Anything else falls through so unknown URLs get the normal branded 404.

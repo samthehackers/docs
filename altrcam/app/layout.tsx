@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { ClerkProvider } from "@clerk/nextjs";
 import { dark } from "@clerk/themes";
 import { clerkConfigured } from "@/lib/config";
+import { AUTH_URLS } from "@/lib/routes";
 import "./globals.css";
 
 const url = process.env.NEXT_PUBLIC_APP_URL ?? "https://altrcam.com";
@@ -24,5 +25,5 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     </html>
   );
   // Clerk throws during prerender without a key; public pages must build and render without one.
-  return clerkConfigured() ? <ClerkProvider appearance={{ baseTheme: dark }}>{page}</ClerkProvider> : page;
+  return clerkConfigured() ? <ClerkProvider appearance={{ baseTheme: dark }} {...AUTH_URLS}>{page}</ClerkProvider> : page;
 }

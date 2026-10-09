@@ -396,6 +396,43 @@ describe("what the pages promise when accounts are not open (the live deployment
   });
 });
 
+describe("the sign-in and sign-up pages", () => {
+  const signUp = async () => html((await SignUpPage()) as ReactElement);
+  const signIn = async () => html((await SignInPage()) as ReactElement);
+  it("sign-up: the agreement line sits under the form and links the Terms and the acceptable-use section", async () => {
+    const s = await signUp();
+    expect(plain(s)).toMatch(/By creating an account you agree to the Terms and Acceptable Use Policy ?\./);
+    expect(s.indexOf("By creating an account")).toBeGreaterThan(s.indexOf("CLERK_SIGNUP_FORM"));
+    expect(hrefs(s)).toEqual(expect.arrayContaining(["/terms", "/terms#acceptable-use", "/privacy", "/"]));
+    expect(s).toMatch(/<a[^>]*href="\/"[^>]*>Back to home<\/a>/);
+  });
+  it("the Terms really have the acceptable-use anchor the link points at", () => {
+    expect(readFileSync("app/(marketing)/terms/page.tsx", "utf8")).toMatch(/<h2 id="acceptable-use"[^>]*>2\. Acceptable use<\/h2>/);
+  });
+  it("sign-in: a Privacy link and Back to home, and no agreement line (nobody is creating an account there)", async () => {
+    const s = await signIn();
+    expect(hrefs(s)).toEqual(expect.arrayContaining(["/privacy", "/"]));
+    expect(plain(s)).not.toContain("By creating an account");
+  });
+  it("both have exactly one h1, visually hidden, open or closed", async () => {
+    for (const closed of [false, true]) {
+      if (closed) delete process.env.DATABASE_URL;
+      const up = await signUp(), inn = await signIn();
+      expect(count(up, "<h1")).toBe(1); expect(count(inn, "<h1")).toBe(1);
+      expect(up).toMatch(/<h1 class="sr-only">Create your account<\/h1>/);
+      expect(inn).toMatch(/<h1 class="sr-only">Sign in<\/h1>/);
+      expect(up).toContain('<main id="content"');
+    }
+  });
+  it("closed: no agreement line, because there is no form to agree under", async () => {
+    delete process.env.SIGNUPS_OPEN;
+    const s = await signUp();
+    expect(plain(s)).not.toContain("CLERK_SIGNUP_FORM");
+    expect(plain(s)).not.toContain("By creating an account");
+    expect(hrefs(s)).toContain("/privacy");
+  });
+});
+
 describe("one answer to 'is sign-up open', everywhere (review of the account-claim fix)", () => {
   // Every combination of the three things sign-up needs: both Clerk keys, the database, and the owner's switch (SIGNUPS_OPEN).
   const ENVS = [false, true].flatMap((clerk) => [false, true].flatMap((db) => [false, true].map((flag) => ({

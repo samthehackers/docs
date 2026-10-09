@@ -72,6 +72,7 @@ const END_LABELS: Record<string, string> = {
   user: "Ended by you",
   stale: "Stopped checking in (connection lost or tab closed)",
   superseded: "Replaced by a newer session",
+  diagnostics: "Admin diagnostics check (not billed)",
 };
 /**
  * `lastSeen` is the last heartbeat. An unclosed session that has been silent longer than the stale cut-off is not running any more;

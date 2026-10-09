@@ -109,6 +109,10 @@ async function main() {
     if (!process.env.NEXT_PUBLIC_SUPPORT_EMAIL) return ["WARN", "NEXT_PUBLIC_SUPPORT_EMAIL not set; Contact page shows support@altrcam.com. Make sure someone reads it"];
   });
 
+  await check("Sign-up switch", async () => {
+    if (cfg.SIGNUPS_OPEN !== "true") return ["WARN", 'SIGNUPS_OPEN is not "true", so the site says sign-up isn\'t open. Set it when you are ready (docs/SETUP.md)'];
+  });
+
   rec("fal.ai signaling", "WARN", "cannot be checked here: verify with a live session (see GO_LIVE.md, step 'Verify fal signaling')");
   rec("Webhook URLs registered", "WARN", "cannot be checked here: Clerk, Paystack, NOWPayments dashboards (see GO_LIVE.md)");
   return report();

@@ -55,6 +55,8 @@ jobs:
           --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 10
     env:
       DATABASE_URL: postgres://postgres:postgres@localhost:5432/altrcam
+      # The e2e signs up, so sign-up must be switched on (docs/SETUP.md, "The sign-up switch").
+      SIGNUPS_OPEN: "true"
       CLERK_WEBHOOK_SECRET: whsec_dGVzdA==
       SUPABASE_URL: https://example.supabase.co
       SUPABASE_SERVICE_ROLE_KEY: x

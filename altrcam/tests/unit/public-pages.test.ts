@@ -30,7 +30,7 @@ import SignUpPage from "@/app/(auth)/sign-up/[[...sign-up]]/page";
 import SignInPage from "@/app/(auth)/sign-in/[[...sign-in]]/page";
 import { StudioCta } from "@/components/studio-cta";
 import { DEFAULT_PLANS } from "@/lib/plans";
-import { PAYMENT_METHODS_TEXT } from "@/lib/public-copy";
+import { PAYMENT_METHODS_TEXT, SIGNUP_CLOSED } from "@/lib/public-copy";
 import { HOW_IT_WORKS_STEPS } from "@/components/how-it-works-steps";
 import { LIVE_AVAILABILITY } from "@/lib/availability";
 import { viewerId } from "@/lib/viewer";
@@ -41,6 +41,7 @@ beforeEach(() => {
   h.me = null; h.authCalls = 0; h.authThrows = false;
   h.plans = structuredClone(DEFAULT_PLANS); // the pages get these limits; no database is touched
   process.env.DATABASE_URL = "postgres://unused/ignored"; // "accounts are open" needs a database to be configured
+  process.env.SIGNUPS_OPEN = "true"; // ...and the owner's sign-up switch
   process.env.PAYSTACK_SECRET_KEY = "sk_test_x"; // "checkout is open" needs a payment provider
   process.env.CRON_SECRET = "cron_x"; // the monthly refill needs it, so "every month" can be promised
   process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY = "pk_test_x"; process.env.CLERK_SECRET_KEY = "sk_test_x";
@@ -396,38 +397,45 @@ describe("what the pages promise when accounts are not open (the live deployment
 });
 
 describe("one answer to 'is sign-up open', everywhere (review of the account-claim fix)", () => {
-  const ENVS = [
-    { name: "neither", clerk: false, db: false },
-    { name: "Clerk only", clerk: true, db: false },
-    { name: "database only", clerk: false, db: true },
-    { name: "Clerk and database", clerk: true, db: true },
-  ];
-  const setEnv = (e: { clerk: boolean; db: boolean }) => {
+  // Every combination of the three things sign-up needs: both Clerk keys, the database, and the owner's switch (SIGNUPS_OPEN).
+  const ENVS = [false, true].flatMap((clerk) => [false, true].flatMap((db) => [false, true].map((flag) => ({
+    clerk, db, flag, name: `${clerk ? "Clerk" : "no Clerk"}, ${db ? "database" : "no database"}, SIGNUPS_OPEN ${flag ? "true" : "unset"}`,
+  }))));
+  const setEnv = (e: { clerk: boolean; db: boolean; flag: boolean }) => {
     if (!e.clerk) { delete process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY; delete process.env.CLERK_SECRET_KEY; }
     if (!e.db) delete process.env.DATABASE_URL;
+    if (!e.flag) delete process.env.SIGNUPS_OPEN;
   };
   for (const e of ENVS) {
     it(`${e.name}: the landing page, how-it-works, pricing, header and both auth pages all agree`, async () => {
       setEnv(e);
-      const open = e.clerk && e.db;
+      const open = e.clerk && e.db && e.flag, canSignIn = e.clerk && e.db;
       const l = await landing(), hw = await how(), pr = await pricing(), hd = await layout();
       const su = html((await SignUpPage()) as ReactElement), si = html((await SignInPage()) as ReactElement);
       if (open) {
         expect(plain(su)).toContain("CLERK_SIGNUP_FORM");
-        expect(plain(si)).toContain("CLERK_SIGNIN_FORM");
         expect(hrefs(l)).toContain("/sign-up"); expect(hrefs(hw)).toContain("/sign-up");
         expect(plain(hd)).toContain("Get started"); expect(plain(hd)).toContain("Sign in");
         expect(plain(pr)).toContain("Start free");
-        for (const s of [l, hw]) expect(plain(s)).not.toContain("Sign-up isn't open");
+        for (const s of [l, hw]) expect(plain(s)).not.toContain(SIGNUP_CLOSED);
       } else {
-        expect(plain(su)).toContain("Accounts aren't available on this deployment yet");
-        expect(plain(si)).toContain("Accounts aren't available on this deployment yet");
         expect(plain(su)).not.toContain("CLERK_SIGNUP_FORM");
-        for (const s of [l, hw]) { expect(hrefs(s)).not.toContain("/sign-up"); expect(plain(s)).toContain("Sign-up isn't open on this deployment yet."); }
-        expect(hrefs(hd)).not.toContain("/sign-up"); expect(hrefs(hd)).not.toContain("/sign-in");
-        expect(plain(hd)).not.toMatch(/Get started|Sign in/);
+        expect(plain(su)).toContain("Accounts aren't available on this deployment yet");
+        for (const s of [l, hw]) { expect(hrefs(s)).not.toContain("/sign-up"); expect(plain(s)).toContain(SIGNUP_CLOSED); }
+        expect(hrefs(hd)).not.toContain("/sign-up");
+        expect(plain(hd)).not.toMatch(/Get started/);
         expect(plain(pr)).toContain("Sign-up isn't open yet");
         expect(plain(pr)).not.toContain("Start free");
+      }
+      // Sign-in needs only the credentials: switching sign-up off must not lock existing accounts out.
+      if (canSignIn) {
+        expect(plain(si)).toContain("CLERK_SIGNIN_FORM");
+        expect(hrefs(hd)).toContain("/sign-in");
+      } else {
+        expect(plain(si)).not.toContain("CLERK_SIGNIN_FORM");
+        expect(plain(si)).toContain("Accounts aren't available on this deployment yet");
+        expect(hrefs(hd)).not.toContain("/sign-in");
+        expect(plain(hd)).not.toMatch(/Sign in/);
       }
     });
   }

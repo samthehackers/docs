@@ -29,6 +29,8 @@ const schema = z.object({
   PRICE_TOPUP_5K: num,
   PRICE_TOPUP_15K: num,
   EMAIL_FROM: z.string().default("AltrCam <hello@altrcam.com>"),
+  // The sign-up switch (lib/config.ts signupsSwitchedOn). Optional: unset or empty means "false", sign-up closed.
+  SIGNUPS_OPEN: z.preprocess((v) => (v === "" ? undefined : v), z.enum(["true", "false"]).default("false")),
 });
 
 export type Env = z.infer<typeof schema>;

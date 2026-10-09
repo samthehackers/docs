@@ -9,5 +9,5 @@ export const LIVE_AVAILABILITY = {
   title: "Live video isn't confirmed yet",
   body:
     "AltrCam's live connection to the AI model hasn't been tested end to end against the real service, so going live may not connect. " +
-    "Credits are counted from when you press Go live, even if the connection fails. You can still create an account and look around.",
+    "Credits are counted from when you press Go live, even if the connection fails.",
 } as const;

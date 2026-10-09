@@ -95,6 +95,11 @@ test.describe("content honesty", () => {
       await expect(page.getByTestId("live-availability")).toContainText("may not connect");
     }
   });
+  test("with no accounts configured the landing page says sign-up isn't open instead of promising free credits", async ({ page }) => {
+    await page.goto("/");
+    await expect(page.locator("main")).toContainText("Sign-up isn't open on this deployment yet.");
+    await expect(page.locator("main")).not.toContainText(/free credits every month|create an account/i);
+  });
   test("a signed-out visitor is sent to sign up, not straight to the studio", async ({ page }) => {
     await page.goto("/");
     await expect(page.getByRole("link", { name: "Try it free" })).toHaveAttribute("href", "/sign-up");

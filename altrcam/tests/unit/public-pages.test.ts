@@ -32,8 +32,9 @@ import { viewerId } from "@/lib/viewer";
 beforeAll(() => { (globalThis as { React?: unknown }).React = React; }); // pages are JSX; Next compiles them with the automatic runtime
 const ENV = { ...process.env };
 beforeEach(() => {
-  h.me = null; h.authCalls = 0; h.authThrows = false; h.plans = null;
-  delete process.env.DATABASE_URL; // plans fall back to the defaults
+  h.me = null; h.authCalls = 0; h.authThrows = false;
+  h.plans = structuredClone(DEFAULT_PLANS); // the pages get these limits; no database is touched
+  process.env.DATABASE_URL = "postgres://unused/ignored"; // "accounts are open" needs a database to be configured
   process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY = "pk_test_x"; process.env.CLERK_SECRET_KEY = "sk_test_x";
   process.env.PRICE_PRO_MONTHLY = "1500000"; process.env.PRICE_PRO_YEARLY = "15000000"; process.env.PRICE_LIFETIME = "9900000";
   process.env.PRICE_TOPUP_1K = "300000"; process.env.PRICE_TOPUP_5K = "1200000"; process.env.PRICE_TOPUP_15K = "3000000";
@@ -325,5 +326,53 @@ describe("review follow-ups: the pages that ask for money, and sentences tied to
   it("the three value props are top-level headings, not children of 'How it works'", async () => {
     const l = await landing();
     for (const t of ["1 credit = 1 second", "Your camera, your call", "Keep what you make"]) expect(l).toContain(`>${t}</h2>`);
+  });
+});
+
+describe("what the pages promise when accounts are not open (the live deployment had no Clerk keys and no database)", () => {
+  it("the shared live-video note no longer says visitors can create an account", () => {
+    expect(`${LIVE_AVAILABILITY.title} ${LIVE_AVAILABILITY.body}`).not.toMatch(/create an account|look around/i);
+    expect(LIVE_AVAILABILITY.body).toMatch(/even if the connection fails/);
+  });
+  it("without a database the landing page says sign-up isn't open instead of promising free credits", async () => {
+    delete process.env.DATABASE_URL;
+    const t = plain(await landing());
+    expect(t).toContain("Sign-up isn't open on this deployment yet.");
+    expect(t).not.toMatch(/free credits every month/);
+    expect(t).not.toMatch(/create an account/i);
+  });
+  it("without Clerk keys it says the same", async () => {
+    delete process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY; delete process.env.CLERK_SECRET_KEY;
+    const t = plain(await landing());
+    expect(t).toContain("Sign-up isn't open on this deployment yet.");
+    expect(t).not.toMatch(/free credits every month/);
+  });
+  it("with Clerk and a database it promises the free credits, from the plan config", async () => {
+    const t = plain(await landing());
+    expect(t).toContain("300 free credits every month. No card needed.");
+    expect(t).not.toContain("Sign-up isn't open");
+  });
+  it("a signed-in visitor sees neither line", async () => {
+    h.me = "user_1";
+    const t = plain(await landing());
+    expect(t).not.toContain("Sign-up isn't open");
+    expect(t).not.toContain("free credits every month");
+  });
+  it("no capability is stated unhedged next to the 'untested' note", async () => {
+    const t = plain(await landing());
+    expect(t).toContain("The AI tries to restyle your live video to match.");
+    expect(t).not.toMatch(/The AI restyles your live video/);
+  });
+  it("the pricing buttons name the plan properly", async () => {
+    const t = plain(await pricing());
+    expect(t).toContain("Choose Pro");
+    expect(t).toContain("Choose Lifetime");
+    expect(t).not.toMatch(/Choose pro|Choose lifetime/);
+  });
+  it("Privacy and the support page say AltrCam does not record video, the same as the FAQ", () => {
+    expect(readFileSync("app/(marketing)/privacy/page.tsx", "utf8")).toMatch(/AltrCam does not record it/);
+    expect(readFileSync("app/(marketing)/privacy/page.tsx", "utf8")).not.toMatch(/not recorded by default/);
+    expect(readFileSync("components/troubleshooting.tsx", "utf8")).toMatch(/AltrCam does not record live video/);
+    expect(readFileSync("components/troubleshooting.tsx", "utf8")).not.toMatch(/not recorded by default/);
   });
 });

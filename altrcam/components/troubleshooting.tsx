@@ -130,7 +130,7 @@ export function troubleshootingItems(plans: Record<Plan, PlanConfig>): Troublesh
         <>
           <p>Only video. The camera preview stays in your browser until you press Go live. From then on the Studio sends your camera video, your prompt and the reference image (if you attached one) to the AI service so it can send transformed video back.</p>
           <p className="mt-2">AltrCam does not use your microphone: it never asks for permission, and it does not capture or send audio. There is no microphone setting to fix.</p>
-          <p className="mt-2">Live video is not recorded by default. A still is saved to History only when you press Snapshot, and on plans with clip recording, Record clip downloads a file to your own device.</p>
+          <p className="mt-2">AltrCam does not record live video. A still is saved to History only when you press Snapshot, and on plans with clip recording, Record clip downloads a file to your own device.</p>
         </>
       ),
     },

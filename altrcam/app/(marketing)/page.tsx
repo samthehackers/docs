@@ -5,6 +5,7 @@ import { HowItWorksSteps } from "@/components/how-it-works-steps";
 import { StudioCta } from "@/components/studio-cta";
 import { buttonClass } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { capabilities } from "@/lib/config";
 import { getPlans } from "@/lib/plan-config";
 import { savingSentence } from "@/lib/public-copy";
 import { viewerId } from "@/lib/viewer";
@@ -16,7 +17,7 @@ export const metadata = { title: { absolute: "AltrCam — Be anyone. Live." } };
 export const revalidate = 60;
 
 const features = [
-  { icon: Sparkles, title: "Become anyone", body: "Describe a character, or add a reference image. The AI restyles your live video to match. Results vary." },
+  { icon: Sparkles, title: "Become anyone", body: "Describe a character, or add a reference image. The AI tries to restyle your live video to match. Results vary." },
   { icon: ImageIcon, title: "Swap your world", body: "Describe a different setting, like a beach or a boardroom, and the AI tries to put you there." },
   { icon: Shirt, title: "Change your fit", body: "Describe an outfit or a whole new style, and the AI tries to dress you in it." },
   { icon: Wand2, title: "Anime to oil paint", body: "Pick a built-in style preset, or write your own prompt." },
@@ -25,6 +26,8 @@ const features = [
 export default async function Landing() {
   const [plans, userId] = await Promise.all([getPlans(), viewerId()]);
   const signedIn = userId !== null;
+  // Accounts need both sign-in and the database. Without them the sign-up page is a dead end, so don't promise free credits.
+  const accountsOpen = capabilities().auth && capabilities().database;
   return (
     <>
       <section className="relative overflow-hidden">
@@ -40,7 +43,9 @@ export default async function Landing() {
             <StudioCta signedIn={signedIn} />
             <Link href="/pricing" className={buttonClass({ variant: "outline", size: "lg" })}>See pricing</Link>
           </div>
-          {!signedIn && <p className="mt-4 text-sm text-muted-foreground">{plans.FREE.monthlyCredits} free credits every month. No card needed.</p>}
+          {!signedIn && (accountsOpen
+            ? <p className="mt-4 text-sm text-muted-foreground">{plans.FREE.monthlyCredits} free credits every month. No card needed.</p>
+            : <p role="status" className="mt-4 text-sm text-muted-foreground">Sign-up isn&apos;t open on this deployment yet.</p>)}
           <AvailabilityNotice className="mt-8" />
         </div>
       </section>

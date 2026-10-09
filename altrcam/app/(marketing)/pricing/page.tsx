@@ -25,7 +25,7 @@ export default async function Pricing() {
       <div className="mt-4">
         <PricingCards plans={plans} renderCta={(t) => (
           <Link href={t.product ? "/billing" : "/sign-up"} prefetch={t.product ? false : undefined} className={buttonClass({ variant: t.highlight ? "gradient" : "outline", className: "w-full" })}>
-            {t.product ? "Choose " + t.key.toLowerCase() : "Start free"}
+            {t.product ? "Choose " + plans[t.key].label : "Start free"}
           </Link>
         )} />
       </div>

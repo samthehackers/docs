@@ -90,6 +90,29 @@ export async function closeOpenSessions(userId: string, now = new Date()) {
   return open.length;
 }
 
+export type LiveResult =
+  | { status: "live"; liveAt: Date; already: boolean }
+  | { status: "not_found" }
+  | { status: "ended"; reason: string | null };
+
+/**
+ * The browser saw the first transformed frame: record the server time as the session's live time. Only the owner's own
+ * open session, and only once: a repeat (a retried request, a second tab) changes nothing and reports the first time.
+ * Row-locked, so two concurrent calls cannot both set it.
+ */
+export async function markLive(sessionId: string, userId: string, now = new Date()): Promise<LiveResult> {
+  return db().transaction(async (tx) => {
+    const [row] = await tx.select({ liveAt: studioSessions.liveAt, endedAt: studioSessions.endedAt, endReason: studioSessions.endReason })
+      .from(studioSessions).where(and(eq(studioSessions.id, sessionId), eq(studioSessions.userId, userId))).for("update");
+    if (!row) return { status: "not_found" as const };
+    if (row.endedAt) return { status: "ended" as const, reason: row.endReason };
+    if (row.liveAt) return { status: "live" as const, liveAt: row.liveAt, already: true };
+    // Going live is a sign of life too, so it counts as a heartbeat.
+    await tx.update(studioSessions).set({ liveAt: now, lastHeartbeatAt: now }).where(eq(studioSessions.id, sessionId));
+    return { status: "live" as const, liveAt: now, already: false };
+  });
+}
+
 /** The user's open session (if any), used by the fal proxy gate. */
 export async function activeSession(sessionId: string, userId: string) {
   const [s] = await db().select({ id: studioSessions.id }).from(studioSessions)

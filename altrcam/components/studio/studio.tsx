@@ -9,6 +9,7 @@ import { BUILTIN_PRESETS, TYPE_BY_KIND, type PresetKind } from "@/lib/studio-pre
 import { readUrl, uploadFile } from "@/lib/client-upload";
 import { CAPTURE_SIZE, HEARTBEAT_SECONDS } from "@/lib/plans";
 import { createCamera, EMPTY_CAMERA_VIEW, type Camera as CameraController, type CameraView } from "@/lib/studio-camera";
+import { watchFirstFrame } from "@/lib/first-frame";
 import { browserNetwork, createStudioSession, initialSessionView, type SessionView, type StartInputs, type StudioSession } from "@/lib/studio-session";
 import { MESSAGES, STUDIO_NOTICES } from "@/lib/studio-messages";
 import { cn } from "@/lib/utils";
@@ -47,6 +48,7 @@ export function Studio(p: StudioProps) {
   const remoteStream = useRef<MediaStream | null>(null);
   const recorder = useRef<MediaRecorder | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const stopFrameWatch = useRef<(() => void) | null>(null);
   const startBalance = useRef(p.balance);
   const mounted = useRef(true);
 
@@ -89,6 +91,10 @@ export function Studio(p: StudioProps) {
       onRemoteStream: (st) => {
         remoteStream.current = st;
         if (!st && recorder.current?.state === "recording") recorder.current.stop();
+        stopFrameWatch.current?.();
+        stopFrameWatch.current = null;
+        // Credits count from the first transformed frame on screen, so watch for it before the stream is attached.
+        if (st && outRef.current) stopFrameWatch.current = watchFirstFrame(outRef.current, () => session.current?.firstFrame());
         if (outRef.current) outRef.current.srcObject = st;
       },
       network: browserNetwork(),
@@ -100,7 +106,7 @@ export function Studio(p: StudioProps) {
     setSess(s.view()); // picks up whether the browser starts out offline
     const onUnload = () => { const id = s.sessionId(); if (id) navigator.sendBeacon("/api/studio/session/end", new Blob([JSON.stringify({ sessionId: id })], { type: "application/json" })); };
     window.addEventListener("pagehide", onUnload);
-    return () => { window.removeEventListener("pagehide", onUnload); off(); s.dispose(); session.current = null; };
+    return () => { window.removeEventListener("pagehide", onUnload); off(); s.dispose(); session.current = null; stopFrameWatch.current?.(); stopFrameWatch.current = null; };
   }, []);
 
   async function onRef(file: File | undefined) {

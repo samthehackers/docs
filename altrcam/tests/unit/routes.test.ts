@@ -18,7 +18,7 @@ describe("route access rules", () => {
     expect(isProtected(req(p))).toBe(true);
   });
 
-  it.each(["/api/studio/session/start", "/api/studio/session/heartbeat", "/api/fal/proxy", "/api/payments/checkout", "/api/admin/credits",
+  it.each(["/api/studio/session/start", "/api/studio/session/heartbeat", "/api/studio/session/live", "/api/studio/session/end", "/api/account/consent", "/api/fal/proxy", "/api/payments/checkout", "/api/admin/credits",
     "/api/admin/plan", "/api/presets", "/api/history/1", "/api/account", "/api/support", "/api/notifications"])("%s is a protected API", (p) => {
     expect(isPublic(req(p))).toBe(false);
     expect(isProtected(req(p))).toBe(true);

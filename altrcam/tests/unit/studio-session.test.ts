@@ -25,7 +25,7 @@ class FakeConn implements LucyConnection {
 
 const INPUTS: StartInputs = { prompt: "an astronaut", expand: true, kind: "prompt", referencePath: null };
 const TIMEOUT: LucyFailure = { code: "answer_timeout", message: "Timed out waiting for the model to answer" };
-const START = "/api/studio/session/start", BEAT = "/api/studio/session/heartbeat", END = "/api/studio/session/end";
+const START = "/api/studio/session/start", BEAT = "/api/studio/session/heartbeat", END = "/api/studio/session/end", LIVE = "/api/studio/session/live";
 
 function setup(over: Partial<SessionDeps> & { routes?: Record<string, Route> } = {}) {
   let online = true;
@@ -35,6 +35,7 @@ function setup(over: Partial<SessionDeps> & { routes?: Record<string, Route> } =
     [START]: () => json(200, { sessionId: `s${++n}`, maxSeconds: 120, remaining: 300 }),
     [BEAT]: () => json(200, { remaining: 290, continue: true, secondsLeftInSession: 110 }),
     [END]: () => json(200, { remaining: 280, secondsBilled: 20 }),
+    [LIVE]: () => json(200, { liveAt: new Date().toISOString(), alreadyLive: false }),
     ...over.routes,
   };
   const calls: { url: string; body: Body }[] = [];
@@ -129,6 +130,83 @@ describe("a normal session", () => {
     await t.s.start(INPUTS);
     expect(t.to(START)).toHaveLength(0);
     expect(t.s.view().notice?.text).toMatch(/camera/i);
+  });
+});
+
+describe("going live is the first transformed frame (fair billing)", () => {
+  it("reports the first frame to the server once, and records when it rendered", async () => {
+    const t = setup();
+    await t.s.start(INPUTS);
+    t.conns[0].emit("live"); // the connection is up, but nothing has been shown yet
+    await tick(0);
+    expect(t.to(LIVE)).toHaveLength(0);
+    expect(t.s.view().liveSince).toBeNull();
+    t.s.firstFrame();
+    t.s.firstFrame();
+    await tick(0);
+    expect(t.to(LIVE).map((c) => c.body)).toEqual([{ sessionId: "s1" }]);
+    expect(t.s.view().liveSince).toBe(Date.now());
+    await tick(10_000);
+    expect(t.to(LIVE)).toHaveLength(1); // confirmed: not repeated with the heartbeat
+  });
+
+  it("a renegotiated stream (Apply changes) is not a new start", async () => {
+    const t = setup();
+    await t.s.start(INPUTS);
+    t.conns[0].emit("live");
+    t.s.firstFrame();
+    await t.s.applyChanges(INPUTS);
+    t.conns[1].emit("live");
+    t.s.firstFrame();
+    await tick(0);
+    expect(t.to(LIVE)).toHaveLength(1);
+  });
+
+  it("does nothing without an open session (a late frame after Stop)", async () => {
+    const t = setup();
+    t.s.firstFrame();
+    await t.s.start(INPUTS);
+    await t.s.stop();
+    t.s.firstFrame();
+    await tick(0);
+    expect(t.to(LIVE)).toHaveLength(0);
+  });
+
+  it("retries a report the network lost, before the next heartbeat", async () => {
+    let down = true;
+    const t = setup({ routes: { [LIVE]: () => { if (down) throw new TypeError("Failed to fetch"); return json(200, { alreadyLive: false }); } } });
+    await t.s.start(INPUTS);
+    t.conns[0].emit("live");
+    t.s.firstFrame();
+    await tick(0);
+    expect(t.to(LIVE)).toHaveLength(1);
+    down = false;
+    await tick(10_000);
+    expect(t.calls.map((c) => c.url).filter((u) => u === LIVE || u === BEAT)).toEqual([LIVE, LIVE, BEAT]);
+    await tick(10_000);
+    expect(t.to(LIVE)).toHaveLength(2);
+  });
+
+  it("a refusal (the session is over on the server) ends the session here too", async () => {
+    const t = setup({ routes: { [LIVE]: () => json(409, { error: "This session has already ended", code: "ended" }) } });
+    await t.s.start(INPUTS);
+    t.conns[0].emit("live");
+    t.s.firstFrame();
+    await tick(0);
+    expect(t.s.view()).toMatchObject({ state: "idle", notice: { text: "Session ended." } });
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("a new session starts with no live time", async () => {
+    const t = setup();
+    await t.s.start(INPUTS);
+    t.s.firstFrame();
+    await t.s.stop();
+    await t.s.start(INPUTS);
+    expect(t.s.view().liveSince).toBeNull();
+    t.s.firstFrame();
+    await tick(0);
+    expect(t.to(LIVE).map((c) => c.body.sessionId)).toEqual(["s1", "s2"]);
   });
 });
 

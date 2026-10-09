@@ -5,6 +5,7 @@ import { HttpError } from "@/lib/api";
 const limits = {
   sessionStart: { n: 10, window: "1 m" },
   heartbeat: { n: 20, window: "1 m" },
+  live: { n: 20, window: "1 m" },
   checkout: { n: 10, window: "10 m" },
   ticket: { n: 5, window: "10 m" },
   upload: { n: 30, window: "10 m" },

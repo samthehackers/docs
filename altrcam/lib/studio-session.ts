@@ -33,6 +33,8 @@ export interface SessionView {
   remaining: number;
   sessionLeft: number | null;
   stats: RtcStats | null;
+  /** Browser time (ms) at which this session's first transformed frame rendered: credits count from then. Null before. */
+  liveSince: number | null;
 }
 
 export interface SessionDeps {
@@ -69,12 +71,14 @@ export interface StudioSession {
   stop: (why?: { notice?: Notice; reason?: ClientEndReason }) => Promise<void>;
   /** The camera's video track ended: end the session if one is open. */
   cameraLost: () => Promise<void>;
+  /** The output <video> rendered its first transformed frame (lib/first-frame.ts): tell the server, which bills from now. */
+  firstFrame: () => void;
   sessionId: () => string | null;
   dispose: () => void;
 }
 
 export function initialSessionView(balance: number): SessionView {
-  return { state: "idle", notice: null, offline: false, remaining: balance, sessionLeft: null, stats: null };
+  return { state: "idle", notice: null, offline: false, remaining: balance, sessionLeft: null, stats: null, liveSince: null };
 }
 
 const JSON_HEADERS = { "Content-Type": "application/json" };
@@ -93,6 +97,8 @@ export function createStudioSession(d: SessionDeps): StudioSession {
   let statTimer: ReturnType<typeof setInterval> | null = null;
   let lastStats: RtcStats | null = null;
   let pendingEnd: { id: string; reason: ClientEndReason } | null = null; // an end the server hasn't confirmed yet
+  let framed: string | null = null;    // the session whose first transformed frame has rendered
+  let liveSent: string | null = null;  // the session whose live time the server has confirmed
 
   const set = (patch: Partial<SessionView>) => {
     view = { ...view, ...patch };
@@ -149,9 +155,29 @@ export function createStudioSession(d: SessionDeps): StudioSession {
     hb = setInterval(() => void heartbeat(), d.heartbeatSeconds * 1000);
   }
 
+  /**
+   * Tell the server the first frame rendered (it bills from its own clock from then). A network error is retried with the
+   * next heartbeat; a refusal means the session is over on the server, so it is ended here too.
+   */
+  async function reportLive(id: string) {
+    const r = await d.fetch("/api/studio/session/live", { method: "POST", headers: JSON_HEADERS, body: JSON.stringify({ sessionId: id }) }).catch(() => null);
+    if (id !== sid || !r) return;
+    if (r.ok) { liveSent = id; return; }
+    if (r.status === 404 || r.status === 409) await stop({ notice: { tone: "info", text: MESSAGES.sessionEnded } });
+  }
+
+  function firstFrame() {
+    const id = sid;
+    if (!id || framed === id) return; // no session, or this one already went live (a renegotiated stream is not a new start)
+    framed = id;
+    set({ liveSince: Date.now() });
+    void reportLive(id);
+  }
+
   async function heartbeat() {
     const id = sid;
     if (!id) return;
+    if (framed === id && liveSent !== id) { await reportLive(id); if (id !== sid) return; }
     const st = lastStats;
     const r = await d.fetch("/api/studio/session/heartbeat", { method: "POST", headers: JSON_HEADERS, body: JSON.stringify({ sessionId: id, stats: st ? { fps: st.fps, rttMs: st.rttMs } : undefined }) }).catch(() => null);
     if (id !== sid) return; // the session changed while we waited
@@ -265,7 +291,7 @@ export function createStudioSession(d: SessionDeps): StudioSession {
       }
       if (cancelled()) { void endServerSession(body.sessionId, "user"); return; } // stopped while the server was creating it: don't leave it open
       sid = body.sessionId;
-      set({ remaining: body.remaining ?? view.remaining, sessionLeft: body.maxSeconds ?? null });
+      set({ remaining: body.remaining ?? view.remaining, sessionLeft: body.maxSeconds ?? null, liveSince: null });
       if (open(sid, i, referenceImageUrl)) startTimers(); // a connection that failed on the spot has already ended the session
     } finally {
       if (activeRun === mine) activeRun = null;
@@ -306,6 +332,7 @@ export function createStudioSession(d: SessionDeps): StudioSession {
     applyChanges,
     stop,
     cameraLost: async () => { if (sid || conn || activeRun !== null) await stop({ notice: { tone: "error", text: MESSAGES.cameraLostLive }, reason: "camera_lost" }); },
+    firstFrame,
     sessionId: () => sid,
     dispose: () => {
       if (disposed) return;

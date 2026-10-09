@@ -19,8 +19,13 @@ export async function claimReferral(d: DB, userId: string, code: string, opts: {
   const now = opts.now ?? new Date();
   if (!REFERRAL.codePattern.test(code)) return { status: "ignored", reason: "bad_code" };
   return d.transaction(async (tx): Promise<ClaimResult> => {
-    // Lock the friend's row so two concurrent loads can't both claim.
-    await tx.execute(sql`select 1 from ${users} where ${users.id} = ${userId} for update`);
+    // Lock the friend's row so two concurrent loads can't both claim, and the code owner's row too, always in id
+    // order. Locking only our own row and then touching the other's (the foreign key check does) lets two accounts
+    // that claim each other at the same moment wait on each other: Postgres aborts one with a deadlock error.
+    // With a fixed order the second one waits, then sees the first one's link and is refused as a cycle.
+    const [owner] = await tx.select({ id: users.id }).from(users).where(eq(users.referralCode, code));
+    const lockIds = owner && owner.id !== userId ? [userId, owner.id].sort() : [userId];
+    for (const id of lockIds) await tx.execute(sql`select 1 from ${users} where ${users.id} = ${id} for update`);
     const [me] = await tx.select().from(users).where(eq(users.id, userId));
     if (!me || me.deletedAt) return { status: "ignored", reason: "no_user" };
     if (me.referredBy) return { status: "ignored", reason: "already_referred" };

@@ -34,6 +34,7 @@ export default async function History({ searchParams }: { searchParams: Promise<
   ]);
   const thumbs = await Promise.all(rows.map((r) => (r.thumbnailUrl ? signedReadUrl(r.thumbnailUrl) : null)));
   const pages = Math.max(1, Math.ceil(n / PAGE));
+  const filtered = Boolean(sp.type || sp.from || sp.to);
   const qs = (p: number) => { const q = new URLSearchParams(); if (sp.type) q.set("type", sp.type); if (sp.from) q.set("from", sp.from); if (sp.to) q.set("to", sp.to); q.set("page", String(p)); return `?${q}`; };
 
   return (
@@ -41,6 +42,7 @@ export default async function History({ searchParams }: { searchParams: Promise<
       <div>
         <h1 className="text-3xl font-bold">History</h1>
         <p className="text-sm text-muted-foreground">{days ? `Your plan keeps history for ${days} days.` : "Your plan keeps history forever."}</p>
+        <p className="text-sm text-muted-foreground">History holds the stills you save with the Snapshot button while you&apos;re live in the Studio. Live sessions themselves aren&apos;t stored here; see your usage on the <Link href="/dashboard" className="text-primary underline">Dashboard</Link>.</p>
       </div>
       <form className="flex flex-wrap items-end gap-3" role="search">
         <label className="text-xs text-muted-foreground">Type<Select name="type" defaultValue={sp.type ?? ""} className="mt-1 w-40"><option value="">All</option>{TYPES.map((t) => <option key={t}>{t}</option>)}</Select></label>
@@ -48,7 +50,16 @@ export default async function History({ searchParams }: { searchParams: Promise<
         <label className="text-xs text-muted-foreground">To<Input type="date" name="to" defaultValue={sp.to} className="mt-1" /></label>
         <Button type="submit" variant="outline">Filter</Button>
       </form>
-      {rows.length === 0 ? <Card className="py-12 text-center text-muted-foreground">Nothing here yet. Snapshots from the studio land here.</Card> : (
+      {rows.length === 0 ? (
+        <Card className="space-y-2 py-12 text-center text-muted-foreground">
+          {filtered ? <p>No saved items match these filters.</p> : (
+            <>
+              <p>Nothing saved yet.</p>
+              <p className="text-sm">Snapshots are saved manually: press Snapshot in the <Link href="/studio" className="text-primary underline">Studio</Link> while you&apos;re live and the still lands here. A session you don&apos;t snapshot leaves nothing in History.</p>
+            </>
+          )}
+        </Card>
+      ) : (
         <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {rows.map((r, i) => (
             <li key={r.id}><Card className="overflow-hidden p-0">
@@ -56,6 +67,12 @@ export default async function History({ searchParams }: { searchParams: Promise<
               <div className="space-y-2 p-4">
                 <p className="truncate font-medium">{r.title}</p>
                 <p className="text-xs text-muted-foreground">{r.type} · {relativeTime(r.createdAt)}</p>
+                {r.prompt && (
+                  <details className="text-xs">
+                    <summary className="cursor-pointer text-muted-foreground">Prompt</summary>
+                    <p className="mt-1 whitespace-pre-wrap break-words">{r.prompt}</p>
+                  </details>
+                )}
                 <HistoryActions id={r.id} />
               </div>
             </Card></li>

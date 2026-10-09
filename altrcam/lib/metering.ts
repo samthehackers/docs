@@ -72,6 +72,24 @@ export async function sweepStaleSessions(now = new Date()) {
   return stale.length;
 }
 
+/**
+ * Close the user's open sessions before they start a new one (one live session per user).
+ * A session whose heartbeat stopped is closed exactly as the sweep would close it, billed up to its LAST heartbeat,
+ * so the bill does not depend on whether the best-effort sweep happened to run first. Billing it up to "now" would
+ * charge someone whose computer died for every second until they came back, up to their plan's session length.
+ * A session that is still heartbeating is settled up to now and marked superseded.
+ */
+export async function closeOpenSessions(userId: string, now = new Date()) {
+  const cutoff = now.getTime() - STALE_AFTER_SECONDS * 1000;
+  const open = await db().select({ id: studioSessions.id, last: studioSessions.lastHeartbeatAt }).from(studioSessions)
+    .where(and(eq(studioSessions.userId, userId), isNull(studioSessions.endedAt)));
+  for (const s of open) {
+    if (s.last.getTime() < cutoff) await meterSession(s.id, userId, { now: s.last, end: "stale" });
+    else await meterSession(s.id, userId, { now, end: "superseded" });
+  }
+  return open.length;
+}
+
 /** The user's open session (if any), used by the fal proxy gate. */
 export async function activeSession(sessionId: string, userId: string) {
   const [s] = await db().select({ id: studioSessions.id }).from(studioSessions)

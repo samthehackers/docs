@@ -41,7 +41,7 @@ import * as adminCredits from "@/app/api/admin/credits/route";
 import * as adminPlan from "@/app/api/admin/plan/route";
 import * as adminTickets from "@/app/api/admin/tickets/route";
 import * as adminUsers from "@/app/api/admin/users/route";
-import { dashboardData } from "@/lib/queries";
+import { dashboardData, usageHistory } from "@/lib/queries";
 
 let d: DB;
 beforeAll(async () => { d = await testDb(); h.db = d; }, 60_000);
@@ -159,6 +159,35 @@ describe("user A cannot touch user B's data", () => {
     const data = await dashboardData("A", "FREE");
     expect(data.recent.map((t) => t.title)).toEqual(["mine"]);
     expect(data.balance.total).toBe(100);
+  });
+  it("the dashboard and usage history never contain B's presets, sessions, payments, ledger rows or subscription", async () => {
+    // B (seeded above) has a preset, a saved item, an open session, a successful payment, an active subscription and credits.
+    await d.insert(creditLedger).values({ userId: "B", delta: -10, bucket: "monthly", reason: "session" });
+    await d.insert(creditLedger).values({ userId: "B", delta: 1000, bucket: "purchased", reason: "topup_purchase" });
+    // Control: B's own views do show all of it, so the empty results below are not just an empty fixture.
+    const b = await dashboardData("B", "PRO");
+    expect(b).toMatchObject({ presetCount: 1, hasActiveSubscription: true, lastPayment: { product: "TOPUP_1K" } });
+    expect((await usageHistory("B")).sessions).toHaveLength(1);
+
+    // A owns nothing but their 100 seed credits.
+    const a = await dashboardData("A", "PRO");
+    expect(a).toMatchObject({ presets: [], presetCount: 0, recent: [], lastPayment: null, hasActiveSubscription: false, sessionsThisMonth: 0, usedSeconds: 0, usedMonthly: 0 });
+    expect(a.balance.total).toBe(100);
+    const hist = await usageHistory("A");
+    expect(hist.sessions).toEqual([]);
+    expect(hist.credits.map((c) => c.reason)).toEqual(["seed"]);
+
+    // Once A has data of their own, exactly that comes back and still nothing of B's.
+    await d.insert(presets).values({ userId: "A", name: "A's preset", kind: "style" });
+    await d.insert(payments).values({ userId: "A", provider: "paystack", reference: "ref_A2", kind: "topup", product: "TOPUP_5K", amountMinor: 1, currency: "NGN", status: "success" });
+    await d.insert(studioSessions).values({ id: "33333333-3333-4333-8333-333333333333", userId: "A", maxSeconds: 120, secondsBilled: 12, settings: { prompt: "A's prompt" } });
+    const a2 = await dashboardData("A", "PRO");
+    const hist2 = await usageHistory("A");
+    expect(a2.presets.map((p) => p.name)).toEqual(["A's preset"]);
+    expect(a2.lastPayment?.product).toBe("TOPUP_5K");
+    expect(hist2.sessions.map((s) => s.id)).toEqual(["33333333-3333-4333-8333-333333333333"]);
+    const everything = JSON.stringify({ a, a2, hist, hist2 });
+    for (const secret of ["B's preset", "secret", "ref_B", "TOPUP_1K", SESSION_B, "B's clip", "topup_purchase"]) expect(everything).not.toContain(secret);
   });
   it("a user can heartbeat their own session (control)", async () => {
     await d.insert(studioSessions).values({ id: "22222222-2222-4222-8222-222222222222", userId: "A", maxSeconds: 120, startedAt: new Date(Date.now() - 20_000) });

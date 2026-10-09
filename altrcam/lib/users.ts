@@ -1,7 +1,7 @@
 import { eq, sql } from "drizzle-orm";
 import { randomBytes } from "node:crypto";
 import { db, type DB } from "@/lib/db";
-import { users, payments, subscriptions, creditLedger, studioSessions, transformations, presets, notifications, supportTickets } from "@/db/schema";
+import { users, payments, subscriptions, creditLedger, studioSessions, transformations, presets, notifications, supportTickets, webhookEvents } from "@/db/schema";
 import { grantCredits } from "@/lib/credits";
 import { getPlan } from "@/lib/plan-config";
 import { deleteUserFiles } from "@/lib/storage";
@@ -11,10 +11,25 @@ import { purgeReferrals } from "@/lib/referrals";
 
 export interface ProfileInput { id: string; email: string; name: string; avatarUrl?: string | null }
 
-/** Idempotent: inserts the user once and grants signup credits once. */
-export async function provisionUser(p: ProfileInput, d: DB = db()) {
+/** A webhook delivery that carries the provisioning (Clerk's user.created). `eventId` is namespaced, e.g. `clerk:<svix-id>`. */
+export interface ProvisionEvent { provider: string; eventId: string; type: string }
+
+/**
+ * Idempotent: inserts the user once (plan FREE, the column default) and grants the sign-up credits once, however often it runs and
+ * whichever caller gets here first: the Clerk webhook or the lazy path (ensureUserRow, from the first signed-in page). Concurrent
+ * callers are serialised by the users primary key: ON CONFLICT DO NOTHING waits for the other transaction, then inserts nothing,
+ * so only the transaction that created the row grants. With `event`, the delivery is recorded in webhook_events in the same
+ * transaction; a delivery already recorded changes nothing (returns false), and a failed one is not recorded, so a retry is processed.
+ * Only the event's id and type are stored, no profile data. Returns whether this call created the user.
+ */
+export async function provisionUser(p: ProfileInput, d: DB = db(), event?: ProvisionEvent) {
   const signupCredits = (await getPlan("FREE", d)).monthlyCredits; // follows the admin-configured FREE allowance
   return d.transaction(async (tx) => {
+    if (event) {
+      const recorded = await tx.insert(webhookEvents).values({ provider: event.provider, eventId: event.eventId, type: event.type })
+        .onConflictDoNothing().returning({ id: webhookEvents.id });
+      if (!recorded.length) return false; // this delivery was processed before: a replay
+    }
     const inserted = await tx.insert(users).values({
       id: p.id, email: p.email, name: p.name, avatarUrl: p.avatarUrl ?? null,
       referralCode: randomBytes(4).toString("hex"),

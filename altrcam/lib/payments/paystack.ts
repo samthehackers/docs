@@ -15,7 +15,7 @@ export function safeEqualHex(a: string, b: string) {
 }
 
 export function paystackSignatureValid(rawBody: string, header: string | null, secret: string) {
-  if (!header) return false;
+  if (!header || !secret) return false; // an unset secret is an empty HMAC key, which anyone can use to sign
   return safeEqualHex(hmacSha512Hex(rawBody, secret), header.toLowerCase());
 }
 

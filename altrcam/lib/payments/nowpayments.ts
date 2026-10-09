@@ -12,7 +12,7 @@ export function sortKeysDeep(v: unknown): unknown {
 }
 
 export function nowpaymentsSignatureValid(body: unknown, header: string | null, secret: string) {
-  if (!header) return false;
+  if (!header || !secret) return false; // an unset secret is an empty HMAC key, which anyone can use to sign
   return safeEqualHex(hmacSha512Hex(JSON.stringify(sortKeysDeep(body)), secret), header.toLowerCase());
 }
 

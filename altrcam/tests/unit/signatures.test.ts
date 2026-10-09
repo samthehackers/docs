@@ -26,3 +26,19 @@ describe("NOWPayments signature", () => {
     expect(nowpaymentsSignatureValid(payload, null, "ipn")).toBe(false);
   });
 });
+
+describe("an unset secret never validates anything", () => {
+  // process.env.X ?? "" is what the callers pass when the variable is missing, and an HMAC with an empty key is
+  // perfectly computable by anyone: without this a deployment missing its secret would accept forged webhooks.
+  const body = JSON.stringify({ event: "charge.success", data: { reference: "x" } });
+  it("Paystack: a signature made with the empty key is rejected", () => {
+    expect(paystackSignatureValid(body, hmacSha512Hex(body, ""), "")).toBe(false);
+  });
+  it("NOWPayments: a signature made with the empty key is rejected", () => {
+    const payload = { payment_status: "finished", order_id: "o1", payment_id: 5 };
+    expect(nowpaymentsSignatureValid(payload, hmacSha512Hex(JSON.stringify(sortKeysDeep(payload)), ""), "")).toBe(false);
+  });
+  it("a real secret still works (the guard is not a blanket rejection)", () => {
+    expect(paystackSignatureValid(body, hmacSha512Hex(body, "sk_live_x"), "sk_live_x")).toBe(true);
+  });
+});

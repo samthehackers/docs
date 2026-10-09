@@ -5,8 +5,9 @@ import { HowItWorksSteps } from "@/components/how-it-works-steps";
 import { StudioCta } from "@/components/studio-cta";
 import { buttonClass } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { accountsOpen as accountsAreOpen, capabilities } from "@/lib/config";
 import { getPlans } from "@/lib/plan-config";
-import { savingSentence } from "@/lib/public-copy";
+import { freeCreditsLine, savingSentence, SIGNUP_CLOSED } from "@/lib/public-copy";
 import { viewerId } from "@/lib/viewer";
 
 export const metadata = { title: { absolute: "AltrCam — Be anyone. Live." } };
@@ -16,7 +17,7 @@ export const metadata = { title: { absolute: "AltrCam — Be anyone. Live." } };
 export const revalidate = 60;
 
 const features = [
-  { icon: Sparkles, title: "Become anyone", body: "Describe a character, or add a reference image. The AI restyles your live video to match. Results vary." },
+  { icon: Sparkles, title: "Become anyone", body: "Describe a character, or add a reference image. The AI tries to restyle your live video to match. Results vary." },
   { icon: ImageIcon, title: "Swap your world", body: "Describe a different setting, like a beach or a boardroom, and the AI tries to put you there." },
   { icon: Shirt, title: "Change your fit", body: "Describe an outfit or a whole new style, and the AI tries to dress you in it." },
   { icon: Wand2, title: "Anime to oil paint", body: "Pick a built-in style preset, or write your own prompt." },
@@ -25,6 +26,9 @@ const features = [
 export default async function Landing() {
   const [plans, userId] = await Promise.all([getPlans(), viewerId()]);
   const signedIn = userId !== null;
+  // Without sign-in and a database the sign-up page is a dead end, so offer no sign-up button and promise no free credits.
+  const accountsOpen = accountsAreOpen();
+  const freeLine = freeCreditsLine(plans.FREE.monthlyCredits, capabilities().cron);
   return (
     <>
       <section className="relative overflow-hidden">
@@ -37,10 +41,12 @@ export default async function Landing() {
             AltrCam is built to restyle your webcam video with a realtime AI model as you describe it: a character, a backdrop, an outfit or an art style. You write a prompt, press Go live, and the result is meant to appear in the studio.
           </p>
           <div className="mt-10 flex flex-col items-center justify-center gap-3 sm:flex-row">
-            <StudioCta signedIn={signedIn} />
+            <StudioCta signedIn={signedIn} accountsOpen={accountsOpen} />
             <Link href="/pricing" className={buttonClass({ variant: "outline", size: "lg" })}>See pricing</Link>
           </div>
-          {!signedIn && <p className="mt-4 text-sm text-muted-foreground">{plans.FREE.monthlyCredits} free credits every month. No card needed.</p>}
+          {!signedIn && (accountsOpen
+            ? freeLine && <p className="mt-4 text-sm text-muted-foreground">{freeLine}</p>
+            : <p role="status" className="mt-4 text-sm text-muted-foreground">{SIGNUP_CLOSED}</p>)}
           <AvailabilityNotice className="mt-8" />
         </div>
       </section>
@@ -79,7 +85,8 @@ export default async function Landing() {
         </div>
         <div className="mt-16 rounded-2xl border bg-card p-10 text-center glow">
           <h2 className="text-3xl font-bold">Ready to go live as someone else?</h2>
-          <StudioCta signedIn={signedIn} signedOutLabel="Sign up to open the studio" className="mt-6" />
+          <StudioCta signedIn={signedIn} accountsOpen={accountsOpen} signedOutLabel="Sign up to open the studio" className="mt-6" />
+          {!signedIn && !accountsOpen && <p className="mt-4 text-sm text-muted-foreground">{SIGNUP_CLOSED}</p>}
         </div>
       </section>
     </>

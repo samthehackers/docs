@@ -66,3 +66,15 @@ export function billingDetails({ currency, yearlyPrice, pricesApproved }: { curr
     },
   ];
 }
+
+/** Shown where sign-up is not open (no sign-in or no database configured): says so instead of selling it. */
+export const SIGNUP_CLOSED = "Sign-up isn't open on this deployment yet.";
+
+/**
+ * The free-credits promise on the landing page. null when the Free plan grants nothing (an admin can set 0). "Every month" is only
+ * said when the monthly refill job can run (it needs CRON_SECRET); otherwise only the sign-up grant is promised.
+ */
+export function freeCreditsLine(monthlyCredits: number, refillRuns: boolean): string | null {
+  if (!(monthlyCredits > 0)) return null;
+  return refillRuns ? `${fmtNum(monthlyCredits)} free credits every month. No card needed.` : `${fmtNum(monthlyCredits)} free credits when you sign up. No card needed.`;
+}

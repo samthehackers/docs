@@ -95,11 +95,27 @@ test.describe("content honesty", () => {
       await expect(page.getByTestId("live-availability")).toContainText("may not connect");
     }
   });
-  test("a signed-out visitor is sent to sign up, not straight to the studio", async ({ page }) => {
+  test("with no accounts configured the landing page says sign-up isn't open instead of promising free credits", async ({ page }) => {
     await page.goto("/");
-    await expect(page.getByRole("link", { name: "Try it free" })).toHaveAttribute("href", "/sign-up");
-    await expect(page.getByRole("link", { name: "Sign up to open the studio" })).toHaveAttribute("href", "/sign-up");
-    await expect(page.locator("main a[href='/studio']")).toHaveCount(0);
+    await expect(page.locator("main")).toContainText("Sign-up isn't open on this deployment yet.");
+    await expect(page.locator("main")).not.toContainText(/free credits every month|create an account/i);
+  });
+  test("with no accounts configured there is no sign-up button anywhere, and nothing links straight to the studio", async ({ page }) => {
+    for (const p of ["/", "/how-it-works", "/pricing"]) {
+      await page.goto(p);
+      await expect(page.locator("a[href='/sign-up'], a[href='/sign-in'], a[href='/studio']")).toHaveCount(0);
+      await expect(page.locator("body")).not.toContainText(/Try it free|Sign up to open the studio|Get started|Start free/);
+    }
+    await page.goto("/pricing");
+    await expect(page.locator("main")).toContainText("Sign-up isn't open yet");
+    await expect(page.locator("main")).toContainText("Not available yet");
+    await expect(page.locator("main a[href='/billing']")).toHaveCount(0);
+  });
+  test("the sign-up and sign-in pages say accounts aren't available, the same as the pages that link to them", async ({ page }) => {
+    for (const p of ["/sign-up", "/sign-in"]) {
+      await page.goto(p);
+      await expect(page.getByRole("status")).toContainText("Accounts aren't available on this deployment yet");
+    }
   });
   test("terms and privacy are clearly marked as templates", async ({ page }) => {
     for (const p of ["/terms", "/privacy"]) {

@@ -3,7 +3,7 @@
  * and the one place the live-video status is written down.
  */
 import { describe, expect, it } from "vitest";
-import { billingDetails, clipPlanLabels, joinList, PAYMENT_METHODS_TEXT, planFeatures, savingSentence } from "@/lib/public-copy";
+import { billingDetails, clipPlanLabels, freeCreditsLine, joinList, PAYMENT_METHODS_TEXT, planFeatures, savingSentence, SIGNUP_CLOSED } from "@/lib/public-copy";
 import { CAPTURE_SIZE, DEFAULT_PLANS, type Plan, type PlanConfig } from "@/lib/plans";
 import { LIVE_AVAILABILITY } from "@/lib/availability";
 
@@ -124,3 +124,23 @@ describe("the live-video status", () => {
     expect(`${LIVE_AVAILABILITY.title} ${LIVE_AVAILABILITY.body}`).not.toMatch(/Decart|Lucy|fal\.ai/i);
   });
 });
+
+describe("the free-credits line", () => {
+  it("says 'every month' only when the refill job can run", () => {
+    expect(freeCreditsLine(300, true)).toBe("300 free credits every month. No card needed.");
+    expect(freeCreditsLine(300, false)).toBe("300 free credits when you sign up. No card needed.");
+  });
+  it("is absent when the Free plan grants nothing, never '0 free credits'", () => {
+    expect(freeCreditsLine(0, true)).toBeNull();
+    expect(freeCreditsLine(0, false)).toBeNull();
+    expect(freeCreditsLine(-5, true)).toBeNull();
+    expect(freeCreditsLine(Number.NaN, true)).toBeNull();
+  });
+  it("formats thousands", () => {
+    expect(freeCreditsLine(1500, true)).toBe("1,500 free credits every month. No card needed.");
+  });
+  it("the closed-sign-up sentence is the one the pages and the tests agree on", () => {
+    expect(SIGNUP_CLOSED).toBe("Sign-up isn't open on this deployment yet.");
+  });
+});
+

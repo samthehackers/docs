@@ -14,7 +14,10 @@ export interface MeterOut { remaining: number; continue: boolean; reason?: strin
 
 /**
  * Bill a session up to `now` (server clock) and close it when credits or the plan limit run out.
- * Row-locked, so concurrent heartbeats cannot double-bill.
+ * Only LIVE time is billed: from live_at (the first transformed frame, POST /live) to `now`, minus what was already
+ * billed. A session that never went live owes nothing on every path that comes through here (heartbeat, end,
+ * supersede on a new start, stale sweep). Row-locked, and the debit is in the same transaction, so concurrent
+ * heartbeats cannot double-bill.
  */
 export async function meterSession(sessionId: string, userId: string, o: { now?: Date; end?: string; stats?: Stats } = {}): Promise<MeterOut | null> {
   const now = o.now ?? new Date();
@@ -25,9 +28,19 @@ export async function meterSession(sessionId: string, userId: string, o: { now?:
     if (!s) return null;
     const [row] = await tx.select().from(studioSessions).where(eq(studioSessions.id, sessionId));
     const bal = await ledgerBalance(tx, userId);
-    if (row.endedAt) return { remaining: bal.total, continue: false, reason: row.endReason ?? "ended", secondsLeftInSession: 0, secondsBilled: row.secondsBilled, ended: true as const };
+    if (row.endedAt) return { remaining: bal.total, continue: false, reason: row.endReason ?? "ended", secondsLeftInSession: 0, secondsBilled: row.secondsBilled, debited: false };
 
-    const m = computeMeter({ startedAt: row.startedAt, now, secondsBilled: row.secondsBilled, maxSeconds: row.maxSeconds, balance: bal.total });
+    if (!row.liveAt) {
+      // Still connecting (no transformed frame yet): nothing is owed, so nothing is debited, whatever closes it.
+      const endReason = o.end;
+      await tx.update(studioSessions).set({
+        lastHeartbeatAt: o.end === "stale" ? row.lastHeartbeatAt : now,
+        ...(endReason ? { endedAt: now, endReason } : {}),
+      }).where(eq(studioSessions.id, sessionId));
+      return { remaining: bal.total, continue: !endReason, reason: endReason, secondsLeftInSession: row.maxSeconds, secondsBilled: row.secondsBilled, debited: false };
+    }
+
+    const m = computeMeter({ liveAt: row.liveAt, now, secondsBilled: row.secondsBilled, maxSeconds: row.maxSeconds, balance: bal.total });
     if (m.debit > 0) await debitCredits(tx, userId, m.debit, "session", { type: "session", id: sessionId });
 
     const n = Math.max(1, Math.floor(row.secondsBilled / 10));
@@ -41,10 +54,10 @@ export async function meterSession(sessionId: string, userId: string, o: { now?:
       ...(endReason ? { endedAt: now, endReason } : {}),
     }).where(eq(studioSessions.id, sessionId));
 
-    return { remaining: m.remaining, continue: m.continue && !o.end, reason: endReason, secondsLeftInSession: m.secondsLeftInSession, secondsBilled: m.secondsBilled, ended: false as const };
+    return { remaining: m.remaining, continue: m.continue && !o.end, reason: endReason, secondsLeftInSession: m.secondsLeftInSession, secondsBilled: m.secondsBilled, debited: m.debit > 0 };
   });
   if (!out) return null;
-  if (!out.ended) await maybeLowCreditAlert(userId, out.remaining).catch((e) => console.error("[low-credit]", e));
+  if (out.debited) await maybeLowCreditAlert(userId, out.remaining).catch((e) => console.error("[low-credit]", e));
   return out;
 }
 
@@ -63,7 +76,7 @@ async function maybeLowCreditAlert(userId: string, remaining: number) {
   if (to) await sendEmail(to, "You're low on AltrCam credits", `<p>You have <b>${remaining}</b> credits left. <a href="${process.env.NEXT_PUBLIC_APP_URL}/billing">Top up</a> to keep going live.</p>`);
 }
 
-/** Close sessions whose heartbeat stopped; billed only up to the last heartbeat. */
+/** Close sessions whose heartbeat stopped; billed only up to the last heartbeat (nothing at all if it never went live). */
 export async function sweepStaleSessions(now = new Date()) {
   const cutoff = new Date(now.getTime() - STALE_AFTER_SECONDS * 1000);
   const stale = await db().select({ id: studioSessions.id, userId: studioSessions.userId, last: studioSessions.lastHeartbeatAt })
@@ -77,7 +90,8 @@ export async function sweepStaleSessions(now = new Date()) {
  * A session whose heartbeat stopped is closed exactly as the sweep would close it, billed up to its LAST heartbeat,
  * so the bill does not depend on whether the best-effort sweep happened to run first. Billing it up to "now" would
  * charge someone whose computer died for every second until they came back, up to their plan's session length.
- * A session that is still heartbeating is settled up to now and marked superseded.
+ * A session that is still heartbeating is settled up to now and marked superseded. A session that never went live
+ * (no transformed frame yet) is closed with nothing billed, whichever of these applies.
  */
 export async function closeOpenSessions(userId: string, now = new Date()) {
   const cutoff = now.getTime() - STALE_AFTER_SECONDS * 1000;

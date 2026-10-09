@@ -73,9 +73,10 @@ describe("the sentence about saving", () => {
 describe("billing details", () => {
   const base = { currency: "NGN", yearlyPrice: "₦150,000", pricesApproved: false };
   const all = (d: ReturnType<typeof billingDetails>) => d.map((x) => `${x.term}: ${x.text}`).join("\n");
-  it("covers renewal, cancelling, currency, payment methods, top-ups, Lifetime and refunds", () => {
+  it("covers credits, renewal, cancelling, currency, payment methods, top-ups, Lifetime and refunds", () => {
     const d = billingDetails(base);
-    expect(d.map((x) => x.term)).toEqual(["Renewal", "Cancelling", "Currency", "Payment methods", "Top-ups", "Lifetime", "Refunds"]);
+    expect(d.map((x) => x.term)).toEqual(["Credits", "Renewal", "Cancelling", "Currency", "Payment methods", "Top-ups", "Lifetime", "Refunds"]);
+    expect(d[0].text).toBe("1 credit = 1 second of live transformed video. Credits count only while your transformed video is live. If it never connects, you pay nothing.");
     const t = all(d);
     expect(t).toContain("renews automatically");
     expect(t).toContain("A Pro subscription can be cancelled from the Billing page");
@@ -114,11 +115,12 @@ describe("billing details", () => {
 });
 
 describe("the live-video status", () => {
-  it("says it is untested and that credits count even if the connection fails", () => {
+  it("says it is untested, and that credits count only while the transformed video is live", () => {
     const t = `${LIVE_AVAILABILITY.title} ${LIVE_AVAILABILITY.body}`;
     expect(t).toMatch(/hasn't been tested end to end/);
     expect(t).toMatch(/may not connect/);
-    expect(t).toMatch(/even if the connection fails/);
+    expect(t).toContain("Credits count only while your transformed video is live. If it never connects, you pay nothing.");
+    expect(t).not.toMatch(/even if the connection fails/);
   });
   it("does not name the model vendor in public body copy", () => {
     expect(`${LIVE_AVAILABILITY.title} ${LIVE_AVAILABILITY.body}`).not.toMatch(/Decart|Lucy|fal\.ai/i);

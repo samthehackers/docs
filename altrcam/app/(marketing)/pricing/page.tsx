@@ -21,7 +21,7 @@ export default async function Pricing() {
   return (
     <div className="mx-auto max-w-6xl px-4 py-16">
       <h1 className="text-center text-4xl font-bold">Simple pricing. <span className="gradient-text">Credits by the second.</span></h1>
-      <p className="mx-auto mt-3 max-w-xl text-center text-muted-foreground">1 credit = 1 second of session time. Monthly credits refill each cycle; top-ups never expire.</p>
+      <p className="mx-auto mt-3 max-w-xl text-center text-muted-foreground">1 credit = 1 second of live transformed video. Monthly credits refill each cycle; top-ups never expire.</p>
       <div className="mt-8"><PricingNotice /></div>
       <AvailabilityNotice className="mb-4" />
       {!checkoutOpen && <p role="status" className="mx-auto mb-4 max-w-xl text-center text-sm text-muted-foreground">{signupOpen ? "Checkout isn't open on this deployment yet." : `${SIGNUP_CLOSED} Checkout isn't open yet either.`}</p>}

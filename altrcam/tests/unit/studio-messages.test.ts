@@ -61,9 +61,10 @@ describe("the standing notes", () => {
     expect(STUDIO_NOTICES.videoOnly).toMatch(/microphone/i);
     expect(STUDIO_NOTICES.videoOnly).toMatch(/no audio is captured or sent/i);
   });
-  it("say honestly that live transformation hasn't been tested against the real service, and that failed attempts use credits", () => {
+  it("say honestly that live transformation hasn't been tested against the real service, and how credits are counted", () => {
     expect(STUDIO_NOTICES.unverified).toMatch(/hasn't been tested against the real/i);
-    expect(STUDIO_NOTICES.unverified).toMatch(/Credits are used while a session is open, even if it never connects/);
+    expect(STUDIO_NOTICES.unverified).toContain("Credits count only while your transformed video is live. If it never connects, you pay nothing.");
+    expect(STUDIO_NOTICES.unverified).not.toMatch(/even if it never connects/);
   });
   it("don't claim it works", () => {
     for (const t of Object.values(STUDIO_NOTICES)) expect(t).not.toMatch(/\b(works|verified and|guaranteed|fully|always)\b/i);

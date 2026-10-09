@@ -6,6 +6,7 @@
  */
 import Link from "next/link";
 import { fmtSessionLimit } from "@/lib/account-summary";
+import { CREDITS_RULE } from "@/lib/availability";
 import { HEARTBEAT_SECONDS, STALE_AFTER_SECONDS, type Plan, type PlanConfig } from "@/lib/plans";
 import { fmtNum } from "@/lib/utils";
 
@@ -49,7 +50,7 @@ export function troubleshootingItems(plans: Record<Plan, PlanConfig>): Troublesh
           </Ul>
           <p className="mt-2">Things to try, in order:</p>
           <Ul>
-            <li>Press Reconnect (or Stop, then Go live again). This starts a fresh session, billed from its own start, and a new session closes any earlier one. Each attempt is billed for the time it was open, so if it fails the same way twice, fix the cause before trying again.</li>
+            <li>Press Reconnect (or Stop, then Go live again). This starts a fresh session, and a new session closes any earlier one. An attempt that never shows transformed video costs nothing, but if it fails the same way twice, fix the cause before trying again.</li>
             <li>Check that your internet is steady in both directions. Moving closer to the router or using a cable helps.</li>
             <li>Turn off any VPN, or try another network such as a phone hotspot. Some VPNs, proxies and work or school firewalls block the kind of real-time connection (WebRTC) that video needs.</li>
             <li>While you are live, the Studio shows FPS, round-trip time, jitter and packet loss. High round-trip time or packet loss points to the network.</li>
@@ -65,7 +66,7 @@ export function troubleshootingItems(plans: Record<Plan, PlanConfig>): Troublesh
       title: "I'm out of credits, or my credits look wrong",
       body: (
         <>
-          <p><b>1 credit = 1 second</b> of live video. Our server counts the seconds while a session is open, and nothing is spent while you are not live.</p>
+          <p><b>1 credit = 1 second</b> of live transformed video. Our server counts the seconds from the moment your transformed video first appears until the session ends. {CREDITS_RULE}</p>
           <Ul>
             <li><b>Monthly credits</b> come with your plan ({fmtNum(plans.FREE.monthlyCredits)} on Free, {fmtNum(plans.PRO.monthlyCredits)} on Pro). They refill at the start of each month (UTC). Unused monthly credits expire and do not roll over.</li>
             <li><b>Purchased credits</b> come from top-ups, never expire, and are used only after your monthly credits run out.</li>

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Sparkles, Shirt, ImageIcon, Wand2, Zap, ShieldCheck } from "lucide-react";
 import { AvailabilityNotice } from "@/components/availability-notice";
+import { CREDITS_RULE } from "@/lib/availability";
 import { HowItWorksSteps } from "@/components/how-it-works-steps";
 import { StudioCta } from "@/components/studio-cta";
 import { buttonClass } from "@/components/ui/button";
@@ -72,7 +73,7 @@ export default async function Landing() {
       <section className="mx-auto max-w-4xl px-4 pb-24">
         <div className="grid gap-6 sm:grid-cols-3">
           {[
-            { icon: Zap, t: "1 credit = 1 second", b: "Counted from when you press Go live until the session ends. Monthly credits refill each cycle; bought top-ups never expire." },
+            { icon: Zap, t: "Pay only for live video", b: `${CREDITS_RULE} 1 credit = 1 second. Monthly credits refill each cycle; bought top-ups never expire.` },
             { icon: ShieldCheck, t: "Your camera, your call", b: "Your preview stays in your browser. Video goes to a third-party AI service only after you press Go live. Video only: no audio." },
             { icon: Sparkles, t: "Keep what you make", b: savingSentence(plans) },
           ].map(({ icon: Icon, t, b }) => (

@@ -32,7 +32,7 @@ import { StudioCta } from "@/components/studio-cta";
 import { DEFAULT_PLANS } from "@/lib/plans";
 import { PAYMENT_METHODS_TEXT } from "@/lib/public-copy";
 import { HOW_IT_WORKS_STEPS } from "@/components/how-it-works-steps";
-import { LIVE_AVAILABILITY } from "@/lib/availability";
+import { CREDITS_RULE, LIVE_AVAILABILITY } from "@/lib/availability";
 import { viewerId } from "@/lib/viewer";
 
 beforeAll(() => { (globalThis as { React?: unknown }).React = React; }); // pages are JSX; Next compiles them with the automatic runtime
@@ -125,9 +125,11 @@ describe("the landing page", () => {
     const t = plain(await landing());
     expect(t).toContain("Save snapshots to your History on every plan. Recording a clip to download is included in Pro and Lifetime.");
   });
-  it("describes credits as session time from Go live, not 'only while the magic is on'", async () => {
+  it("sells the billing rule the code enforces: credits only while the transformed video is live, nothing if it never connects", async () => {
     const t = plain(await landing());
-    expect(t).toContain("Counted from when you press Go live until the session ends");
+    expect(t).toContain("Pay only for live video");
+    expect(t).toContain(CREDITS_RULE);
+    expect(t).not.toMatch(/counted from when you press Go live|even if the connection fails|time spent connecting/i);
   });
   for (const [name, render] of [["landing", landing], ["how-it-works", how], ["pricing", pricing]] as const) {
     it(`${name} keeps none of the removed claims`, async () => {
@@ -255,10 +257,19 @@ describe("review follow-ups: the pages that ask for money, and sentences tied to
     expect(t).toMatch(/AltrCam does not record your live video/);
     expect(t).toMatch(/reference image you attach is uploaded to AltrCam's storage/);
   });
-  it("Privacy and Terms agree with the pages: clips are not stored, a credit is session time from Go live", () => {
+  it("Privacy and Terms agree with the pages: clips are not stored, a credit is a second of live transformed video", () => {
     expect(readFileSync("app/(marketing)/privacy/page.tsx", "utf8")).toMatch(/clips you record are downloaded to your own device and are not stored by us/);
-    expect(readFileSync("app/(marketing)/terms/page.tsx", "utf8")).toMatch(/1 second of session time, counted from when you press Go live/);
-    expect(readFileSync("app/(marketing)/terms/page.tsx", "utf8")).not.toMatch(/1 second of live video/);
+    const terms = readFileSync("app/(marketing)/terms/page.tsx", "utf8");
+    expect(terms).toMatch(/1 credit equals 1 second of live transformed video, counted from when the transformed video first appears/);
+    expect(terms).toMatch(/a session that never connects uses no credits/);
+    expect(terms).not.toMatch(/including time spent connecting|counted from when you press Go live/);
+  });
+  it("every page that states the credit rule states the one the code enforces", () => {
+    const t = plain(faq());
+    expect(t).toContain(CREDITS_RULE);
+    expect(t).not.toMatch(/seconds spent trying still count/);
+    expect(HOW_IT_WORKS_STEPS[3].b).toContain(CREDITS_RULE);
+    expect(LIVE_AVAILABILITY.body).toContain(CREDITS_RULE);
   });
   it("the FAQ payment answer is the same text as the billing details", () => {
     expect(plain(faq())).toContain(PAYMENT_METHODS_TEXT);
@@ -272,7 +283,8 @@ describe("review follow-ups: the pages that ask for money, and sentences tied to
   it("steps 3 and 4 state what is billed and when, and where the video goes", () => {
     const step = (n: number) => HOW_IT_WORKS_STEPS[n - 1].b;
     expect(step(3)).toMatch(/sent to a third-party realtime AI model/);
-    expect(step(4)).toMatch(/counted from when you press Go live until it ends/);
+    expect(step(4)).toContain(CREDITS_RULE);
+    expect(step(4)).not.toMatch(/counted from when you press Go live/);
     expect(step(1)).toMatch(/video only, never your microphone/);
   });
   it("shows the free-credit line to a signed-out visitor, from the plan config", async () => {
@@ -295,7 +307,8 @@ describe("review follow-ups: the pages that ask for money, and sentences tied to
   it("the page headline and the first step no longer sell 'pay per second' for what is a monthly plan with an allowance", async () => {
     const t = plain(await pricing());
     expect(t).toContain("Credits by the second.");
-    expect(HOW_IT_WORKS_STEPS[3].t).toBe("4. Credits by the second");
+    expect(t).toContain("1 credit = 1 second of live transformed video.");
+    expect(HOW_IT_WORKS_STEPS[3].t).toBe("4. Pay only for live video");
   });
   it("the marketing header shows Dashboard when signed in and Get started when not (the layout is rendered here)", async () => {
     expect(plain(await layout())).toContain("Get started");
@@ -342,14 +355,14 @@ describe("review follow-ups: the pages that ask for money, and sentences tied to
   });
   it("the three value props are top-level headings, not children of 'How it works'", async () => {
     const l = await landing();
-    for (const t of ["1 credit = 1 second", "Your camera, your call", "Keep what you make"]) expect(l).toContain(`>${t}</h2>`);
+    for (const t of ["Pay only for live video", "Your camera, your call", "Keep what you make"]) expect(l).toContain(`>${t}</h2>`);
   });
 });
 
 describe("what the pages promise when accounts are not open (the live deployment had no Clerk keys and no database)", () => {
   it("the shared live-video note no longer says visitors can create an account", () => {
     expect(`${LIVE_AVAILABILITY.title} ${LIVE_AVAILABILITY.body}`).not.toMatch(/create an account|look around/i);
-    expect(LIVE_AVAILABILITY.body).toMatch(/even if the connection fails/);
+    expect(LIVE_AVAILABILITY.body).toMatch(/If it never connects, you pay nothing/);
   });
   it("without a database the landing page says sign-up isn't open instead of promising free credits", async () => {
     delete process.env.DATABASE_URL;

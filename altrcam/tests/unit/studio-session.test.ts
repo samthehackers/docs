@@ -83,9 +83,12 @@ describe("a normal session", () => {
     expect(t.s.view()).toMatchObject({ state: "connecting", remaining: 300, sessionLeft: 120 });
     t.conns[0].emit("live");
     expect(t.s.view().state).toBe("live");
+    await tick(2000);
+    expect(t.s.view()).toMatchObject({ remaining: 300, sessionLeft: 120 }); // connected, but no frame yet: nothing counts
+    t.s.firstFrame();
     await tick(3000);
     expect(t.s.view()).toMatchObject({ remaining: 297, sessionLeft: 117, stats: { fps: 24 } });
-    await tick(7000); // the 10 s heartbeat
+    await tick(5000); // the 10 s heartbeat
     expect(t.to(BEAT)).toHaveLength(1);
     expect(t.to(BEAT)[0].body).toEqual({ sessionId: "s1", stats: { fps: 24, rttMs: 40 } });
     expect(t.s.view()).toMatchObject({ remaining: 290, sessionLeft: 110 });
@@ -228,7 +231,7 @@ describe("a connection that fails must not keep billing (item 1)", () => {
     expect(v.notice).toMatchObject({ tone: "error", retryLabel: "Reconnect" });
     expect(v.notice?.text).toContain("didn't answer within 20 seconds");
     expect(v.notice?.text).toContain("The session was closed.");
-    expect(v.notice?.hint).toMatch(/new session, billed from its start/);
+    expect(v.notice?.hint).toMatch(/new session\. Credits count only once its transformed video is live/);
     // Nothing more happens: no heartbeats, no countdown, no second end call, the message does not go away.
     const remaining = v.remaining;
     await tick(120_000);

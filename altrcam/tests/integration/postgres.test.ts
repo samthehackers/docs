@@ -92,8 +92,8 @@ suite("real PostgreSQL (production driver)", () => {
     it("stale-sessions: closes abandoned sessions billed only to their last heartbeat, leaves live ones open, is idempotent", async () => {
       await user("u"); await grantCredits(db(), "u", 500, "monthly", "seed");
       await db().insert(studioSessions).values([
-        { id: "00000000-0000-4000-8000-000000000001", userId: "u", maxSeconds: 1800, startedAt: ago(12 * MIN), lastHeartbeatAt: ago(10 * MIN), secondsBilled: 100 }, // 120s elapsed at last heartbeat: owes 20
-        { id: "00000000-0000-4000-8000-000000000002", userId: "u", maxSeconds: 1800, startedAt: ago(30_000), lastHeartbeatAt: ago(2_000), secondsBilled: 28 },
+        { id: "00000000-0000-4000-8000-000000000001", userId: "u", maxSeconds: 1800, startedAt: ago(12 * MIN), liveAt: ago(12 * MIN), lastHeartbeatAt: ago(10 * MIN), secondsBilled: 100 }, // 120s elapsed at last heartbeat: owes 20
+        { id: "00000000-0000-4000-8000-000000000002", userId: "u", maxSeconds: 1800, startedAt: ago(30_000), liveAt: ago(30_000), lastHeartbeatAt: ago(2_000), secondsBilled: 28 },
       ]);
       const res = await staleRoute(cron("stale-sessions"));
       expect(res.status).toBe(200);
@@ -154,7 +154,7 @@ suite("real PostgreSQL (production driver)", () => {
       await user("u"); await user("other");
       await grantCredits(db(), "u", 5000, "monthly", "seed");
       const mk = (userId: string, id: string, startedAgo: number, heartbeatAgo: number, billed: number) =>
-        db().insert(studioSessions).values({ id, userId, maxSeconds: 1800, startedAt: ago(startedAgo * 1000), lastHeartbeatAt: ago(heartbeatAgo * 1000), secondsBilled: billed });
+        db().insert(studioSessions).values({ id, userId, maxSeconds: 1800, startedAt: ago(startedAgo * 1000), liveAt: ago(startedAgo * 1000), lastHeartbeatAt: ago(heartbeatAgo * 1000), secondsBilled: billed });
       const SILENT = "00000000-0000-4000-8000-0000000000a1", LIVE = "00000000-0000-4000-8000-0000000000a2", THEIRS = "00000000-0000-4000-8000-0000000000a3";
       await mk("u", SILENT, 1200, 1080, 120);   // went quiet after 120 s, 18 minutes ago
       await mk("other", THEIRS, 1200, 1080, 120);

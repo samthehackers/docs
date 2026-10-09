@@ -65,7 +65,7 @@ for (const vp of VIEWPORTS) {
       await expect(note).toBeVisible();
       await expect(note).toContainText("hasn't been tested end to end");
       await expect(page.getByRole("heading", { name: "How it works", level: 2 })).toBeVisible();
-      for (const step of ["1. Allow your camera", "2. Pick a look", "3. Go live", "4. Credits by the second"]) await expect(page.getByRole("heading", { name: step })).toBeVisible();
+      for (const step of ["1. Allow your camera", "2. Pick a look", "3. Go live", "4. Pay only for live video"]) await expect(page.getByRole("heading", { name: step })).toBeVisible();
       expect(await overflowPx(page)).toBeLessThanOrEqual(0);
     });
 

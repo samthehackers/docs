@@ -3,6 +3,7 @@
  * No React and no browser APIs, so the wording can be reviewed, changed and unit-tested in one place.
  */
 import type { LucyFailure } from "@/lib/fal/signaling";
+import { CREDITS_RULE } from "@/lib/availability";
 
 /**
  * The two standing notes under the preview. Change them here.
@@ -11,11 +12,11 @@ import type { LucyFailure } from "@/lib/fal/signaling";
  */
 export const STUDIO_NOTICES = {
   videoOnly: "AltrCam transforms video only. Your microphone isn't used, and no audio is captured or sent.",
-  unverified: "Live transformation hasn't been tested against the real AI service yet, so connecting may not work. Credits are used while a session is open, even if it never connects.",
+  unverified: `Live transformation hasn't been tested against the real AI service yet, so connecting may not work. ${CREDITS_RULE}`,
 } as const;
 
 export const MESSAGES = {
-  reconnectHint: "Reconnect starts a new session, billed from its start.",
+  reconnectHint: "Reconnect starts a new session. Credits count only once its transformed video is live.",
   sessionClosed: "The session was closed.",
   endUnconfirmed: "We couldn't reach the server to close the session. It will be closed automatically when the server notices it has gone quiet, or when you next start one.",
   offlineIdle: "You're offline. Connect to the internet to go live.",

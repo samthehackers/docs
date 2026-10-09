@@ -43,10 +43,13 @@ beforeEach(async () => {
   await grantCredits(d, "other", 5000, "monthly", "seed");
 });
 
-/** An open session that started `startedAgo` s ago, last heartbeat `heartbeatAgo` s ago, billed `billed` s so far. */
-async function openSession(userId: string, startedAgo: number, heartbeatAgo: number, billed: number) {
+/**
+ * An open session that started `startedAgo` s ago, last heartbeat `heartbeatAgo` s ago, billed `billed` s so far.
+ * It went live (first frame) `liveAgo` s ago: by default as it started; null means it is still connecting.
+ */
+async function openSession(userId: string, startedAgo: number, heartbeatAgo: number, billed: number, liveAgo: number | null = startedAgo) {
   const id = sid();
-  await d.insert(studioSessions).values({ id, userId, maxSeconds: 1800, startedAt: ago(startedAgo), lastHeartbeatAt: ago(heartbeatAgo), secondsBilled: billed });
+  await d.insert(studioSessions).values({ id, userId, maxSeconds: 1800, startedAt: ago(startedAgo), liveAt: liveAgo === null ? null : ago(liveAgo), lastHeartbeatAt: ago(heartbeatAgo), secondsBilled: billed });
   return id;
 }
 const row = async (id: string) => (await d.select().from(studioSessions).where(eq(studioSessions.id, id)))[0];
@@ -86,6 +89,26 @@ describe("starting a session while an earlier one is open", () => {
     expect(closed.secondsBilled).toBeGreaterThanOrEqual(40); // billed through the moment the new one started
     expect(closed.secondsBilled).toBeLessThanOrEqual(42);
     expect(before - (await ledgerBalance(d, "u")).total).toBe(closed.secondsBilled - 35);
+  });
+
+  it("a live session is billed from its first frame, not from when it started connecting", async () => {
+    const old = await openSession("u", 40, 2, 0, 25); // 15 s connecting, then 25 s live, never billed yet
+    const before = (await ledgerBalance(d, "u")).total;
+    expect((await start()).status).toBe(200);
+    const closed = await row(old);
+    expect(closed.endReason).toBe("superseded");
+    expect(closed.secondsBilled).toBeGreaterThanOrEqual(25);
+    expect(closed.secondsBilled).toBeLessThanOrEqual(26);
+    expect(before - (await ledgerBalance(d, "u")).total).toBe(closed.secondsBilled);
+  });
+
+  it("a session still connecting (no first frame) is closed with nothing billed", async () => {
+    const connecting = await openSession("u", 20, 2, 0, null);
+    const before = (await ledgerBalance(d, "u")).total;
+    expect((await start()).status).toBe(200);
+    expect(await row(connecting)).toMatchObject({ secondsBilled: 0, liveAt: null });
+    expect((await row(connecting)).endedAt).not.toBeNull();
+    expect((await ledgerBalance(d, "u")).total).toBe(before);
   });
 
   it("uses the same cut-off as the sweep: just inside it is live, just past it is stale", async () => {

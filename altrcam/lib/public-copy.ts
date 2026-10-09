@@ -1,4 +1,5 @@
 import { CAPTURE_SIZE, type Plan, type PlanConfig } from "@/lib/plans";
+import { CREDITS_RULE } from "@/lib/availability";
 import { fmtSessionLimit } from "@/lib/account-summary";
 import { fmtNum } from "@/lib/utils";
 
@@ -50,6 +51,7 @@ export function billingDetails({ currency, yearlyPrice, pricesApproved }: { curr
     ? ` Pro is also available as a yearly subscription for ${yearlyPrice}; choose it on the Billing page once you have an account.`
     : "";
   return [
+    { term: "Credits", text: `1 credit = 1 second of live transformed video. ${CREDITS_RULE}` },
     { term: "Renewal", text: `Pro renews automatically each period until you cancel.${yearly}` },
     { term: "Cancelling", text: "A Pro subscription can be cancelled from the Billing page (if no Cancel button shows, contact us). It stays active until the end of the period you already paid for; you are not charged again. Lifetime and top-ups are one-time purchases with nothing to cancel." },
     {

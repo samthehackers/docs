@@ -1,12 +1,13 @@
 import { Camera, Wand2, Radio, Coins } from "lucide-react";
 import { Card } from "@/components/ui/card";
+import { CREDITS_RULE } from "@/lib/availability";
 
 /** The four steps, shared by the landing page and /how-it-works so they cannot drift apart. */
 export const HOW_IT_WORKS_STEPS = [
   { icon: Camera, t: "1. Allow your camera", b: "Sign in, open the studio and allow camera access. You see a preview that stays in your browser until you press Go live. AltrCam uses video only, never your microphone." },
   { icon: Wand2, t: "2. Pick a look", b: "Choose a preset or write a prompt describing a character, backdrop, outfit or style. Optionally add a reference image to steer the result." },
   { icon: Radio, t: "3. Go live", b: "Your camera video is sent to a third-party realtime AI model, and the transformed video is shown back to you in the studio. Results vary." },
-  { icon: Coins, t: "4. Credits by the second", b: "1 credit = 1 second of session time, counted from when you press Go live until it ends. Stop any time." },
+  { icon: Coins, t: "4. Pay only for live video", b: `1 credit = 1 second of transformed video. ${CREDITS_RULE} Stop any time.` },
 ] as const;
 
 export function HowItWorksSteps({ headingLevel }: { headingLevel: 2 | 3 }) {

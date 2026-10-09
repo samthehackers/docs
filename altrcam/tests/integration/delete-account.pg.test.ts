@@ -46,7 +46,7 @@ suite("deleteAccount versus concurrent activity (real PostgreSQL)", () => {
       const id = `u${n}`, sid = `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
       await db().insert(users).values({ id, email: `${id}@x.co`, name: id });
       await grantCredits(db(), id, 500, "monthly", "seed");
-      await db().insert(studioSessions).values({ id: sid, userId: id, maxSeconds: 1800, startedAt: new Date(Date.now() - 30_000) });
+      await db().insert(studioSessions).values({ id: sid, userId: id, maxSeconds: 1800, startedAt: new Date(Date.now() - 30_000), liveAt: new Date(Date.now() - 30_000) }); // live, so the heartbeat really debits (locks the user row)
       const rs = await Promise.allSettled([meterSession(sid, id), deleteAccount(id, { deleteClerk: false })]);
       dead += deadlocks(rs);
       expect(rs[1].status, `round ${n}: delete should succeed`).toBe("fulfilled");

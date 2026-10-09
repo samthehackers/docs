@@ -10,7 +10,8 @@ export function allocateDebit(b: Balances, amount: number) {
 }
 
 export interface MeterInput {
-  startedAt: Date;
+  /** When the first transformed frame rendered (studio_sessions.live_at, server clock). Billing counts from here. */
+  liveAt: Date;
   now: Date;
   secondsBilled: number;
   maxSeconds: number;
@@ -25,9 +26,14 @@ export interface MeterResult {
   reason?: "credits" | "session_limit";
 }
 
-/** Server-clock metering: bill whole elapsed seconds since start, capped by plan limit and available credits. */
+/**
+ * Server-clock metering: bill whole seconds of LIVE time (since the first frame), capped by the plan's session limit and
+ * by the credits available. `secondsBilled` is everything already billed, so this charges exactly
+ * now - max(liveAt, liveAt + secondsBilled) in whole seconds: the point billed up to is liveAt + secondsBilled, so a
+ * fraction of a second left over by one tick is billed by the next one, and no second is ever billed twice.
+ */
 export function computeMeter(i: MeterInput): MeterResult {
-  const elapsed = Math.max(0, Math.floor((i.now.getTime() - i.startedAt.getTime()) / 1000));
+  const elapsed = Math.max(0, Math.floor((i.now.getTime() - i.liveAt.getTime()) / 1000));
   const cappedElapsed = Math.min(elapsed, i.maxSeconds);
   const owed = Math.max(0, cappedElapsed - i.secondsBilled);
   const debit = Math.min(owed, Math.max(i.balance, 0));

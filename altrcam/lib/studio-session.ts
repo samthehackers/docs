@@ -2,11 +2,13 @@
  * Browser-only. A live Studio session, kept out of the React component so its timers, connection and billing
  * behaviour can be tested with fakes (tests/unit/studio-session.test.ts).
  *
- * One session = one server-side studio_sessions row (credits are used from its start) + one WebRTC connection +
- * three timers (display tick, stats, heartbeat). The rules this file exists to enforce:
+ * One session = one server-side studio_sessions row + one WebRTC connection + three timers (display tick, stats,
+ * heartbeat). Credits are used only from the session's first transformed frame: the page reports it (firstFrame →
+ * POST /live) and the server bills from its own clock from then; until then nothing is charged and the local
+ * countdown does not move. The rules this file exists to enforce:
  *  - Whenever the connection fails, the server session is ended and every timer stopped, so a dead connection
  *    stops using credits, and the user is told why. A failure stays on screen until they act.
- *  - Reconnect always ends the failed attempt and starts a NEW server session, billed from its start.
+ *  - Reconnect always ends the failed attempt and starts a NEW server session, billed from its own first frame.
  *  - Nothing started by an old attempt (a late response, a stale callback, a timer) can touch the current one.
  *  - dispose() leaves no timer, listener or connection behind.
  * There is deliberately no automatic retry: every attempt is a new billed session, and until the first real run
@@ -141,7 +143,10 @@ export function createStudioSession(d: SessionDeps): StudioSession {
 
   function startTimers() {
     clearTimers();
-    tick = setInterval(() => set({ remaining: Math.max(0, view.remaining - 1), sessionLeft: view.sessionLeft === null ? null : Math.max(0, view.sessionLeft - 1) }), 1000);
+    tick = setInterval(() => {
+      if (view.liveSince === null) return; // credits count from the first transformed frame, as on the server
+      set({ remaining: Math.max(0, view.remaining - 1), sessionLeft: view.sessionLeft === null ? null : Math.max(0, view.sessionLeft - 1) });
+    }, 1000);
     statTimer = setInterval(async () => {
       const pc = conn?.pc();
       if (!pc) return;

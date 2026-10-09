@@ -309,10 +309,12 @@ describe("/support", () => {
     expect(t).toMatch(/Only video/);
     expect(t).toMatch(/does not use your microphone/i);
   });
-  it("tells people that Reconnect starts a fresh session billed from its own start", async () => {
+  it("tells people that Reconnect starts a fresh session and that an attempt with no video costs nothing", async () => {
     const t = text(await Support());
     expect(t).toMatch(/Press Reconnect \(or Stop, then Go live again\)/);
-    expect(t).toMatch(/billed from its own start/);
+    expect(t).toMatch(/An attempt that never shows transformed video costs nothing/);
+    expect(t).toContain("Credits count only while your transformed video is live. If it never connects, you pay nothing.");
+    expect(t).not.toMatch(/billed from its own start|billed for the time it was open/);
   });
   it("reads session limits and allowances from the effective plan config", async () => {
     process.env.DATABASE_URL = "postgres://unused/ignored";

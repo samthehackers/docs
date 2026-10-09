@@ -57,7 +57,8 @@ export async function resetMonthly(tx: Tx, userId: string, allowance: number, pe
     await tx.insert(creditLedger).values({ userId, delta: -bal.monthly, bucket: "monthly", reason: "monthly_expiry", refType: "refill", refId: period });
     await bump(tx, userId, "monthly", -bal.monthly);
   }
-  await grantCredits(tx, userId, allowance, "monthly", "monthly_refill", { type: "refill", id: period });
+  // An admin may configure a plan with a 0 allowance: expire what is left, grant nothing (and never throw).
+  if (allowance > 0) await grantCredits(tx, userId, allowance, "monthly", "monthly_refill", { type: "refill", id: period });
 }
 
 /** True if this refill period was already applied (idempotent cron). */

@@ -3,7 +3,8 @@ import { studioSessions, users } from "@/db/schema";
 import { db } from "@/lib/db";
 import { debitCredits, ledgerBalance } from "@/lib/credits";
 import { computeMeter } from "@/lib/credits-math";
-import { LOW_CREDIT_RATIO, PLANS, STALE_AFTER_SECONDS } from "@/lib/plans";
+import { LOW_CREDIT_RATIO, STALE_AFTER_SECONDS } from "@/lib/plans";
+import { getPlan } from "@/lib/plan-config";
 import { notify, userEmailIfEnabled } from "@/lib/notifications";
 import { sendEmail } from "@/lib/email";
 import { sql } from "drizzle-orm";
@@ -52,7 +53,7 @@ async function maybeLowCreditAlert(userId: string, remaining: number) {
   const d = db();
   const [u] = await d.select({ plan: users.plan, at: users.lowCreditNotifiedAt }).from(users).where(eq(users.id, userId));
   if (!u) return;
-  if (remaining >= PLANS[u.plan].monthlyCredits * LOW_CREDIT_RATIO) return;
+  if (remaining >= (await getPlan(u.plan)).monthlyCredits * LOW_CREDIT_RATIO) return;
   if (u.at && Date.now() - u.at.getTime() < 86_400_000) return;
   const claimed = await d.update(users).set({ lowCreditNotifiedAt: new Date() })
     .where(and(eq(users.id, userId), sql`(${users.lowCreditNotifiedAt} is null or ${users.lowCreditNotifiedAt} < now() - interval '1 day')`)).returning({ id: users.id });

@@ -5,7 +5,7 @@ import { buttonClass } from "@/components/ui/button";
 import { Card, CardTitle } from "@/components/ui/card";
 import { requireAppUser } from "@/lib/session-user";
 import { dashboardData } from "@/lib/queries";
-import { PLANS } from "@/lib/plans";
+import { getPlan } from "@/lib/plan-config";
 import { fmtNum, relativeTime } from "@/lib/utils";
 
 export const metadata = { title: "Dashboard" };
@@ -19,7 +19,7 @@ export default async function Dashboard() {
     <div className="space-y-8">
       <div className="flex flex-wrap items-center gap-3">
         <h1 className="text-3xl font-bold">Welcome back, {first}</h1>
-        <Badge>{PLANS[user.plan].label}</Badge>
+        <Badge>{(await getPlan(user.plan)).label}</Badge>
       </div>
 
       {d.lowCredits && (

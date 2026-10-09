@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { allocateDebit, computeMeter } from "@/lib/credits-math";
-import { PLANS, expectedPrice } from "@/lib/plans";
+import { DEFAULT_PLANS as PLANS, expectedPrice } from "@/lib/plans";
 
 describe("allocateDebit", () => {
   it("takes monthly first", () => {

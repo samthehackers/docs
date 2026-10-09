@@ -8,7 +8,7 @@ import { db } from "@/lib/db";
 import { studioSessions } from "@/db/schema";
 import { getUserRow } from "@/lib/users";
 import { ledgerBalance } from "@/lib/credits";
-import { PLANS } from "@/lib/plans";
+import { getPlan } from "@/lib/plan-config";
 import { meterSession } from "@/lib/metering";
 import { capabilities } from "@/lib/config";
 
@@ -28,7 +28,7 @@ export const POST = handle(async (req: Request) => {
   const open = await db().select({ id: studioSessions.id }).from(studioSessions).where(and(eq(studioSessions.userId, userId), isNull(studioSessions.endedAt)));
   for (const s of open) await meterSession(s.id, userId, { end: "superseded" });
 
-  const plan = PLANS[user.plan];
+  const plan = await getPlan(user.plan);
   const id = randomUUID();
   await db().insert(studioSessions).values({ id, userId, maxSeconds: plan.maxSessionSeconds, presetId: body.presetId, settings: body.settings ?? null });
   return NextResponse.json({ sessionId: id, maxSeconds: plan.maxSessionSeconds, resolution: plan.maxResolution, clipRecording: plan.clipRecording, remaining: bal.total });

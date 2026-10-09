@@ -3,7 +3,7 @@ import { and, eq, lt, inArray } from "drizzle-orm";
 import { handle, requireCron } from "@/lib/api";
 import { db } from "@/lib/db";
 import { transformations, users } from "@/db/schema";
-import { PLANS } from "@/lib/plans";
+import { getPlans } from "@/lib/plan-config";
 import { deletePaths } from "@/lib/storage";
 import { downgradeExpired } from "@/lib/payments/fulfil";
 
@@ -14,8 +14,9 @@ export const maxDuration = 300;
 export const GET = handle(async (req: Request) => {
   requireCron(req);
   let purged = 0;
+  const plans = await getPlans();
   for (const plan of ["FREE", "PRO"] as const) {
-    const days = PLANS[plan].historyDays;
+    const days = plans[plan].historyDays;
     if (!days) continue;
     const cutoff = new Date(Date.now() - days * 86_400_000);
     const owners = db().select({ id: users.id }).from(users).where(eq(users.plan, plan));

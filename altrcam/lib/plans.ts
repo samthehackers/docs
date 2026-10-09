@@ -20,7 +20,8 @@ export interface PlanConfig {
   clipRecording: boolean;
 }
 
-export const PLANS: Record<Plan, PlanConfig> = {
+/** Defaults. Admin overrides live in the plan_config table; read effective limits with getPlans() in lib/plan-config.ts. */
+export const DEFAULT_PLANS: Record<Plan, PlanConfig> = {
   FREE: { label: "Free", monthlyCredits: 300, maxSessionSeconds: 120, maxResolution: "low", presets: 3, historyDays: 7, clipRecording: false },
   PRO: { label: "Pro", monthlyCredits: 6000, maxSessionSeconds: 1800, maxResolution: "high", presets: 100, historyDays: 365, clipRecording: true },
   LIFETIME: { label: "Lifetime", monthlyCredits: 6000, maxSessionSeconds: 1800, maxResolution: "high", presets: 100, historyDays: null, clipRecording: true },
@@ -32,7 +33,7 @@ export interface ProductConfig {
   label: string;
   /** Plan granted (subscription/lifetime). */
   plan?: Plan;
-  /** Credits granted immediately on fulfilment (top-ups: purchased bucket). */
+  /** Top-up packs: credits granted (purchased bucket). For subscription/lifetime this is only the default allowance; fulfilment uses the effective plan config. */
   credits: number;
   /** Subscription period length in days. */
   periodDays?: number;
@@ -40,9 +41,9 @@ export interface ProductConfig {
 }
 
 export const PRODUCTS: Record<ProductId, ProductConfig> = {
-  PRO_MONTHLY: { id: "PRO_MONTHLY", kind: "subscription", label: "Pro (monthly)", plan: "PRO", credits: PLANS.PRO.monthlyCredits, periodDays: 31, priceEnv: "PRICE_PRO_MONTHLY" },
-  PRO_YEARLY: { id: "PRO_YEARLY", kind: "subscription", label: "Pro (yearly)", plan: "PRO", credits: PLANS.PRO.monthlyCredits, periodDays: 366, priceEnv: "PRICE_PRO_YEARLY" },
-  LIFETIME: { id: "LIFETIME", kind: "lifetime", label: "Lifetime", plan: "LIFETIME", credits: PLANS.LIFETIME.monthlyCredits, priceEnv: "PRICE_LIFETIME" },
+  PRO_MONTHLY: { id: "PRO_MONTHLY", kind: "subscription", label: "Pro (monthly)", plan: "PRO", credits: DEFAULT_PLANS.PRO.monthlyCredits, periodDays: 31, priceEnv: "PRICE_PRO_MONTHLY" },
+  PRO_YEARLY: { id: "PRO_YEARLY", kind: "subscription", label: "Pro (yearly)", plan: "PRO", credits: DEFAULT_PLANS.PRO.monthlyCredits, periodDays: 366, priceEnv: "PRICE_PRO_YEARLY" },
+  LIFETIME: { id: "LIFETIME", kind: "lifetime", label: "Lifetime", plan: "LIFETIME", credits: DEFAULT_PLANS.LIFETIME.monthlyCredits, priceEnv: "PRICE_LIFETIME" },
   TOPUP_1K: { id: "TOPUP_1K", kind: "topup", label: "1,000 credits", credits: 1000, priceEnv: "PRICE_TOPUP_1K" },
   TOPUP_5K: { id: "TOPUP_5K", kind: "topup", label: "5,000 credits", credits: 5000, priceEnv: "PRICE_TOPUP_5K" },
   TOPUP_15K: { id: "TOPUP_15K", kind: "topup", label: "15,000 credits", credits: 15000, priceEnv: "PRICE_TOPUP_15K" },
@@ -61,7 +62,6 @@ export function expectedPrice(product: ProductId): { amountMinor: number; curren
   return { amountMinor: amount, currency: process.env.PRICE_CURRENCY ?? "NGN" };
 }
 
-export const SIGNUP_CREDITS = PLANS.FREE.monthlyCredits;
 export const LOW_CREDIT_RATIO = 0.1;
 export const HEARTBEAT_SECONDS = 10;
 export const STALE_AFTER_SECONDS = 30;

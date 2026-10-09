@@ -9,7 +9,7 @@ import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { users } from "@/db/schema";
 import { provisionUser } from "@/lib/users";
-import { PLANS } from "@/lib/plans";
+import { getPlans } from "@/lib/plan-config";
 
 async function main() {
   const email = process.argv[2];
@@ -22,7 +22,7 @@ async function main() {
   await provisionUser({ id: u.id, email, name: [u.firstName, u.lastName].filter(Boolean).join(" "), avatarUrl: u.imageUrl });
   await db().update(users).set({ role: "admin" }).where(eq(users.id, u.id));
   console.log(`admin: ${email} (${u.id})`);
-  console.log("plans:", Object.entries(PLANS).map(([k, v]) => `${k}=${v.monthlyCredits}cr`).join(", "));
+  console.log("plans:", Object.entries(await getPlans()).map(([k, v]) => `${k}=${v.monthlyCredits}cr`).join(", "));
   process.exit(0);
 }
 main().catch((e) => { console.error(e); process.exit(1); });

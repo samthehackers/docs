@@ -49,7 +49,7 @@ export function troubleshootingItems(plans: Record<Plan, PlanConfig>): Troublesh
           </Ul>
           <p className="mt-2">Things to try, in order:</p>
           <Ul>
-            <li>Press Stop if it is showing, then Go live again. This starts a fresh session, and a new session closes any earlier one.</li>
+            <li>Press Reconnect (or Stop, then Go live again). This starts a fresh session, billed from its own start, and a new session closes any earlier one. Each attempt is billed for the time it was open, so if it fails the same way twice, fix the cause before trying again.</li>
             <li>Check that your internet is steady in both directions. Moving closer to the router or using a cable helps.</li>
             <li>Turn off any VPN, or try another network such as a phone hotspot. Some VPNs, proxies and work or school firewalls block the kind of real-time connection (WebRTC) that video needs.</li>
             <li>While you are live, the Studio shows FPS, round-trip time, jitter and packet loss. High round-trip time or packet loss points to the network.</li>

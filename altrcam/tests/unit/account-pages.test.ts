@@ -309,6 +309,11 @@ describe("/support", () => {
     expect(t).toMatch(/Only video/);
     expect(t).toMatch(/does not use your microphone/i);
   });
+  it("tells people that Reconnect starts a fresh session billed from its own start", async () => {
+    const t = text(await Support());
+    expect(t).toMatch(/Press Reconnect \(or Stop, then Go live again\)/);
+    expect(t).toMatch(/billed from its own start/);
+  });
   it("reads session limits and allowances from the effective plan config", async () => {
     process.env.DATABASE_URL = "postgres://unused/ignored";
     await setPlanConfig(d, "FREE", { ...DEFAULT_PLANS.FREE, maxSessionSeconds: 90, monthlyCredits: 123 }, "admin");

@@ -1,13 +1,16 @@
 "use client";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { Camera, Circle, ImagePlus, Loader2, Save, Square, Play, Aperture } from "lucide-react";
+import { Camera, Circle, ImagePlus, Loader2, RotateCcw, Save, Square, Play, Aperture, WifiOff } from "lucide-react";
 import { Button, buttonClass } from "@/components/ui/button";
 import { Input, Select, Textarea } from "@/components/ui/input";
-import { connectLucy, readStats, type ConnState, type LucyConnection, type RtcStats } from "@/lib/fal/signaling";
+import { connectLucy, readStats } from "@/lib/fal/signaling";
 import { BUILTIN_PRESETS, TYPE_BY_KIND, type PresetKind } from "@/lib/studio-presets";
 import { readUrl, uploadFile } from "@/lib/client-upload";
 import { HEARTBEAT_SECONDS } from "@/lib/plans";
+import { createCamera, EMPTY_CAMERA_VIEW, type Camera as CameraController, type CameraView } from "@/lib/studio-camera";
+import { browserNetwork, createStudioSession, initialSessionView, type SessionView, type StartInputs, type StudioSession } from "@/lib/studio-session";
+import { MESSAGES, STUDIO_NOTICES } from "@/lib/studio-messages";
 import { cn } from "@/lib/utils";
 
 export interface StudioProps {
@@ -21,135 +24,85 @@ export interface StudioProps {
 const SIZE = { low: { width: 640, height: 360 }, high: { width: 1280, height: 720 } };
 const fmt = (s: number) => `${Math.floor(s / 60)}:${String(Math.max(0, s) % 60).padStart(2, "0")}`;
 
+/**
+ * The Studio page. The camera (lib/studio-camera.ts) and the live session (lib/studio-session.ts) are plain objects
+ * that own their timers, listeners and connections and are unit-tested; this component only shows their state and
+ * forwards clicks. Both are created on mount and disposed on unmount.
+ */
 export function Studio(p: StudioProps) {
-  const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
-  const [deviceId, setDeviceId] = useState("");
-  const [camError, setCamError] = useState<string | null>(null);
+  const [cam, setCam] = useState<CameraView>(EMPTY_CAMERA_VIEW);
+  const [sess, setSess] = useState<SessionView>(() => initialSessionView(p.balance));
   const [prompt, setPrompt] = useState(p.initial.prompt);
   const [expand, setExpand] = useState(p.initial.enablePromptExpansion);
   const [kind, setKind] = useState<PresetKind>(p.initial.kind);
   const [refPath, setRefPath] = useState<string | null>(p.initial.referencePath);
   const [uploading, setUploading] = useState(false);
-  const [state, setState] = useState<ConnState>("idle");
-  const [detail, setDetail] = useState<string | null>(null);
-  const [remaining, setRemaining] = useState(p.balance);
-  const [sessionLeft, setSessionLeft] = useState<number | null>(null);
-  const [stats, setStats] = useState<RtcStats | null>(null);
   const [recording, setRecording] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [presetName, setPresetName] = useState("");
 
   const localRef = useRef<HTMLVideoElement>(null);
   const outRef = useRef<HTMLVideoElement>(null);
-  const camStream = useRef<MediaStream | null>(null);
-  const conn = useRef<LucyConnection | null>(null);
-  const sessionId = useRef<string | null>(null);
-  const hb = useRef<ReturnType<typeof setInterval> | null>(null);
-  const tick = useRef<ReturnType<typeof setInterval> | null>(null);
-  const statTimer = useRef<ReturnType<typeof setInterval> | null>(null);
-  const lastStats = useRef<RtcStats | null>(null);
+  const camera = useRef<CameraController | null>(null);
+  const session = useRef<StudioSession | null>(null);
   const remoteStream = useRef<MediaStream | null>(null);
   const recorder = useRef<MediaRecorder | null>(null);
-  const live = state === "live" || state === "connecting";
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const startBalance = useRef(p.balance);
+  const mounted = useRef(true);
 
-  const flash = (m: string) => { setToast(m); setTimeout(() => setToast(null), 3500); };
+  const live = sess.state === "live" || sess.state === "connecting";
+  const failed = sess.state === "failed";
+  const inputs = (): StartInputs => ({ prompt, expand, kind, referencePath: refPath });
 
-  const startCamera = useCallback(async (id?: string) => {
-    camStream.current?.getTracks().forEach((t) => t.stop());
-    try {
-      const s = await navigator.mediaDevices.getUserMedia({ video: { ...(id ? { deviceId: { exact: id } } : {}), ...SIZE[p.resolution], frameRate: { ideal: 30 } }, audio: false });
-      camStream.current = s;
-      if (localRef.current) localRef.current.srcObject = s;
-      setCamError(null);
-      const all = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === "videoinput");
-      setDevices(all);
-      setDeviceId(s.getVideoTracks()[0]?.getSettings().deviceId ?? id ?? "");
-    } catch (e) {
-      setCamError(e instanceof DOMException && e.name === "NotAllowedError" ? "Camera access was blocked. Allow it in your browser and retry." : "Couldn't open a camera.");
-    }
-  }, [p.resolution]);
-
-  useEffect(() => { void startCamera(); return () => camStream.current?.getTracks().forEach((t) => t.stop()); }, [startCamera]);
-
-  const clearTimers = () => {
-    for (const t of [hb, tick, statTimer]) { if (t.current) clearInterval(t.current); t.current = null; }
+  const flash = (m: string) => {
+    if (!mounted.current) return; // an upload or snapshot that finishes after leaving the page must not start a timer
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    setToast(m);
+    toastTimer.current = setTimeout(() => setToast(null), 3500);
   };
-
-  const stop = useCallback(async (reason?: string) => {
-    clearTimers();
-    if (recorder.current?.state === "recording") recorder.current.stop();
-    conn.current?.close();
-    conn.current = null;
-    if (outRef.current) outRef.current.srcObject = null;
-    remoteStream.current = null;
-    const id = sessionId.current;
-    sessionId.current = null;
-    setStats(null);
-    setState("idle");
-    if (reason) setDetail(reason);
-    if (id) {
-      const r = await fetch("/api/studio/session/end", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sessionId: id }) }).catch(() => null);
-      if (r?.ok) setRemaining((await r.json()).remaining);
-    }
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; if (toastTimer.current) clearTimeout(toastTimer.current); };
   }, []);
 
   useEffect(() => {
-    const onUnload = () => { if (sessionId.current) navigator.sendBeacon("/api/studio/session/end", new Blob([JSON.stringify({ sessionId: sessionId.current })], { type: "application/json" })); };
-    window.addEventListener("pagehide", onUnload);
-    return () => { window.removeEventListener("pagehide", onUnload); void stop(); };
-  }, [stop]);
-
-  async function connect(id: string) {
-    let referenceImageUrl: string | undefined;
-    if (refPath) referenceImageUrl = await readUrl(refPath);
-    conn.current = connectLucy({
-      sessionId: id, stream: camStream.current!, inputs: { prompt, enablePromptExpansion: expand, referenceImageUrl },
-      onRemoteStream: (s) => { remoteStream.current = s; if (outRef.current) outRef.current.srcObject = s; },
-      onState: (s, d) => { setState(s); setDetail(d ?? null); },
+    const c = createCamera({
+      mediaDevices: navigator.mediaDevices,
+      secureContext: window.isSecureContext,
+      size: SIZE[p.resolution],
+      attach: (s) => { if (localRef.current) localRef.current.srcObject = s; },
+      onLost: () => { void session.current?.cameraLost(); },
     });
-  }
+    camera.current = c;
+    const off = c.subscribe(setCam);
+    void c.start();
+    return () => { off(); c.dispose(); camera.current = null; };
+  }, [p.resolution]);
 
-  async function goLive() {
-    if (!camStream.current) return;
-    setDetail(null);
-    setState("connecting");
-    const res = await fetch("/api/studio/session/start", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ settings: { prompt, expand, kind } }) });
-    if (!res.ok) {
-      setState("idle");
-      const j = await res.json().catch(() => ({}));
-      setDetail(res.status === 402 ? "You're out of credits." : j.error ?? "Couldn't start a session");
-      return;
-    }
-    const s = await res.json();
-    sessionId.current = s.sessionId;
-    setRemaining(s.remaining);
-    setSessionLeft(s.maxSeconds);
-    try { await connect(s.sessionId); } catch (e) { await stop(e instanceof Error ? e.message : "Couldn't connect"); return; }
-
-    tick.current = setInterval(() => { setRemaining((r) => Math.max(0, r - 1)); setSessionLeft((x) => (x === null ? x : Math.max(0, x - 1))); }, 1000);
-    statTimer.current = setInterval(async () => {
-      const pc = conn.current?.pc();
-      if (pc) { try { const st = await readStats(pc); lastStats.current = st; setStats(st); } catch { /* ignore */ } }
-    }, 2000);
-    hb.current = setInterval(async () => {
-      const id = sessionId.current; if (!id) return;
-      const st = lastStats.current;
-      const r = await fetch("/api/studio/session/heartbeat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sessionId: id, stats: st ? { fps: st.fps, rttMs: st.rttMs } : undefined }) }).catch(() => null);
-      if (!r) return; // transient network error: server will close us if it persists
-      if (!r.ok) { await stop("Session ended"); return; }
-      const j = await r.json();
-      setRemaining(j.remaining); setSessionLeft(j.secondsLeftInSession);
-      if (!j.continue) await stop(j.reason === "credits" ? "You're out of credits." : "Session limit reached for your plan.");
-    }, HEARTBEAT_SECONDS * 1000);
-  }
-
-  /** The model takes its inputs with the offer, so applying new inputs means re-negotiating the stream. */
-  async function applyChanges() {
-    if (!sessionId.current) return;
-    conn.current?.close();
-    setState("connecting");
-    try { await connect(sessionId.current); } catch (e) { await stop(e instanceof Error ? e.message : "Couldn't reconnect"); }
-  }
+  useEffect(() => {
+    const s = createStudioSession({
+      fetch: (url, init) => fetch(url, init),
+      connect: connectLucy,
+      readStats,
+      referenceUrl: readUrl,
+      getStream: () => (camera.current?.hasLiveVideo() ? camera.current.stream() : null),
+      onRemoteStream: (st) => {
+        remoteStream.current = st;
+        if (!st && recorder.current?.state === "recording") recorder.current.stop();
+        if (outRef.current) outRef.current.srcObject = st;
+      },
+      network: browserNetwork(),
+      balance: startBalance.current, // only the starting balance: the session keeps its own count from here
+      heartbeatSeconds: HEARTBEAT_SECONDS,
+    });
+    session.current = s;
+    const off = s.subscribe(setSess);
+    setSess(s.view()); // picks up whether the browser starts out offline
+    const onUnload = () => { const id = s.sessionId(); if (id) navigator.sendBeacon("/api/studio/session/end", new Blob([JSON.stringify({ sessionId: id })], { type: "application/json" })); };
+    window.addEventListener("pagehide", onUnload);
+    return () => { window.removeEventListener("pagehide", onUnload); off(); s.dispose(); session.current = null; };
+  }, []);
 
   async function onRef(file: File | undefined) {
     if (!file) return;
@@ -168,7 +121,7 @@ export function Studio(p: StudioProps) {
     if (!blob) return;
     try {
       const path = await uploadFile("thumbnail", blob);
-      const res = await fetch("/api/studio/snapshot", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ thumbnailPath: path, title: prompt.slice(0, 60) || "Snapshot", prompt, type: TYPE_BY_KIND[kind], sessionId: sessionId.current ?? undefined, settings: { prompt, expand, kind, referencePath: refPath } }) });
+      const res = await fetch("/api/studio/snapshot", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ thumbnailPath: path, title: prompt.slice(0, 60) || "Snapshot", prompt, type: TYPE_BY_KIND[kind], sessionId: session.current?.sessionId() ?? undefined, settings: { prompt, expand, kind, referencePath: refPath } }) });
       flash(res.ok ? "Saved to History" : "Couldn't save snapshot");
     } catch { flash("Couldn't save snapshot"); }
   }
@@ -198,23 +151,37 @@ export function Studio(p: StudioProps) {
   }
 
   const pick = (pr: { kind: PresetKind; prompt: string; imagePath?: string | null }) => { setKind(pr.kind); setPrompt(pr.prompt); if (pr.imagePath !== undefined) setRefPath(pr.imagePath); };
-  const low = remaining <= 30;
+  const low = sess.remaining <= 30;
+  const retryLabel = sess.notice?.retryLabel;
+  // Retry camera helps with every camera problem except a page or browser that can't use cameras at all.
+  const canRetryCamera = cam.problem && cam.problem.code !== "insecure" && cam.problem.code !== "unsupported";
 
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
-          <span className={cn("inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs", state === "live" ? "border-green-500/50 text-green-400" : state === "failed" ? "border-destructive/50 text-destructive" : "text-muted-foreground")} role="status">
-            <span className={cn("h-2 w-2 rounded-full", state === "live" ? "bg-green-400" : state === "connecting" ? "animate-pulse bg-yellow-400" : "bg-muted-foreground")} />
-            {state === "idle" ? "Ready" : state === "connecting" ? "Connecting" : state === "live" ? "Live" : state === "failed" ? "Failed" : "Closed"}
+          <span className={cn("inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs", sess.state === "live" ? "border-green-500/50 text-green-400" : failed ? "border-destructive/50 text-destructive" : "text-muted-foreground")} role="status">
+            <span className={cn("h-2 w-2 rounded-full", sess.state === "live" ? "bg-green-400" : sess.state === "connecting" ? "animate-pulse bg-yellow-400" : failed ? "bg-destructive" : "bg-muted-foreground")} />
+            {sess.state === "idle" ? "Ready" : sess.state === "connecting" ? "Connecting" : sess.state === "live" ? "Live" : failed ? "Failed" : "Closed"}
           </span>
-          {detail && <span className="text-sm text-muted-foreground">{detail}</span>}
         </div>
         <div className="text-right" aria-live="polite">
-          <p className={cn("text-2xl font-bold tabular-nums", low && "text-accent")}>{remaining.toLocaleString()} <span className="text-sm font-normal text-muted-foreground">credits</span></p>
-          {live && sessionLeft !== null && <p className="text-xs text-muted-foreground">Session ends in {fmt(Math.min(sessionLeft, remaining))}</p>}
+          <p className={cn("text-2xl font-bold tabular-nums", low && "text-accent")}>{sess.remaining.toLocaleString()} <span className="text-sm font-normal text-muted-foreground">credits</span></p>
+          {live && sess.sessionLeft !== null && <p className="text-xs text-muted-foreground">Session ends in {fmt(Math.min(sess.sessionLeft, sess.remaining))}</p>}
         </div>
       </div>
+
+      <p className="rounded-md border border-dashed px-3 py-2 text-xs text-muted-foreground">{STUDIO_NOTICES.unverified}</p>
+
+      {sess.offline && (
+        <p role="status" className="flex items-center gap-2 rounded-lg border border-yellow-500/40 p-3 text-sm text-yellow-400"><WifiOff className="h-4 w-4 shrink-0" aria-hidden /> {live ? MESSAGES.offlineLive : MESSAGES.offlineIdle}</p>
+      )}
+      {sess.notice && (
+        <div role={sess.notice.tone === "error" ? "alert" : "status"} className={cn("rounded-lg border p-3 text-sm", sess.notice.tone === "error" ? "border-destructive/50 text-destructive" : "text-muted-foreground")}>
+          <p>{sess.notice.text}</p>
+          {sess.notice.hint && <p className="mt-1 text-xs text-muted-foreground">{sess.notice.hint}</p>}
+        </div>
+      )}
 
       <div className="grid gap-4 md:grid-cols-2">
         <figure className="overflow-hidden rounded-lg border bg-black">
@@ -223,15 +190,21 @@ export function Studio(p: StudioProps) {
         </figure>
         <figure className="relative overflow-hidden rounded-lg border bg-black">
           <video ref={outRef} autoPlay playsInline className="aspect-video w-full object-cover" aria-label="AI transformed output" />
-          {state !== "live" && <div className="absolute inset-0 grid place-items-center text-sm text-muted-foreground">{state === "connecting" ? <Loader2 className="h-6 w-6 animate-spin" aria-label="Connecting" /> : "Your transformation appears here"}</div>}
+          {sess.state !== "live" && <div className="absolute inset-0 grid place-items-center text-sm text-muted-foreground">{sess.state === "connecting" ? <Loader2 className="h-6 w-6 animate-spin" aria-label="Connecting" /> : failed ? "Not connected" : "Your transformation appears here"}</div>}
           <figcaption className="px-3 py-2 text-xs text-muted-foreground">AltrCam</figcaption>
         </figure>
       </div>
-      {camError && <p role="alert" className="text-sm text-destructive">{camError}</p>}
+      <p className="text-xs text-muted-foreground">{STUDIO_NOTICES.videoOnly}</p>
+      {cam.problem && (
+        <div role="alert" className="flex flex-wrap items-center gap-3 rounded-lg border border-destructive/50 p-3 text-sm text-destructive">
+          <p className="min-w-0 flex-1">{cam.problem.message}</p>
+          {canRetryCamera && <Button variant="outline" size="sm" onClick={() => void camera.current?.retry()} disabled={cam.busy}><RotateCcw className="h-4 w-4" aria-hidden /> Retry camera</Button>}
+        </div>
+      )}
 
-      {stats && (
+      {sess.stats && (
         <dl className="grid grid-cols-2 gap-2 rounded-lg border bg-card p-3 text-xs sm:grid-cols-4" aria-label="Connection diagnostics">
-          {[["FPS", stats.fps], ["RTT", `${stats.rttMs} ms`], ["Jitter", `${stats.jitterMs} ms`], ["Packet loss", `${stats.lossPct}%`]].map(([k, v]) => (
+          {[["FPS", sess.stats.fps], ["RTT", `${sess.stats.rttMs} ms`], ["Jitter", `${sess.stats.jitterMs} ms`], ["Packet loss", `${sess.stats.lossPct}%`]].map(([k, v]) => (
             <div key={k as string}><dt className="text-muted-foreground">{k}</dt><dd className="text-base font-semibold tabular-nums">{v}</dd></div>
           ))}
         </dl>
@@ -239,19 +212,23 @@ export function Studio(p: StudioProps) {
 
       <div className="flex flex-wrap gap-2">
         {!live ? (
-          <Button variant="gradient" size="lg" onClick={goLive} disabled={!camStream.current || p.balance <= 0 && remaining <= 0}><Play className="h-4 w-4" aria-hidden /> Go live</Button>
+          <Button variant="gradient" size="lg" onClick={() => void (retryLabel ? session.current?.reconnect(inputs()) : session.current?.start(inputs()))} disabled={!cam.ready || p.balance <= 0 && sess.remaining <= 0}>
+            {retryLabel ? <RotateCcw className="h-4 w-4" aria-hidden /> : <Play className="h-4 w-4" aria-hidden />} {retryLabel ?? "Go live"}
+          </Button>
         ) : (
-          <Button variant="destructive" size="lg" onClick={() => stop()}><Square className="h-4 w-4" aria-hidden /> Stop</Button>
+          <Button variant="destructive" size="lg" onClick={() => void session.current?.stop()}><Square className="h-4 w-4" aria-hidden /> Stop</Button>
         )}
-        {live && <Button variant="outline" size="lg" onClick={applyChanges} disabled={state !== "live"}>Apply changes</Button>}
-        <Button variant="outline" size="lg" onClick={snapshot} disabled={state !== "live"}><Aperture className="h-4 w-4" aria-hidden /> Snapshot</Button>
+        {sess.state === "connecting" && <Button variant="outline" size="lg" onClick={() => void session.current?.reconnect(inputs())}><RotateCcw className="h-4 w-4" aria-hidden /> Reconnect</Button>}
+        {live && <Button variant="outline" size="lg" onClick={() => void session.current?.applyChanges(inputs())} disabled={sess.state !== "live"}>Apply changes</Button>}
+        <Button variant="outline" size="lg" onClick={snapshot} disabled={sess.state !== "live"}><Aperture className="h-4 w-4" aria-hidden /> Snapshot</Button>
         {p.clipRecording ? (
-          <Button variant="outline" size="lg" onClick={toggleRecord} disabled={state !== "live"}><Circle className={cn("h-4 w-4", recording && "fill-destructive text-destructive")} aria-hidden /> {recording ? "Stop & download" : "Record clip"}</Button>
+          <Button variant="outline" size="lg" onClick={toggleRecord} disabled={sess.state !== "live"}><Circle className={cn("h-4 w-4", recording && "fill-destructive text-destructive")} aria-hidden /> {recording ? "Stop & download" : "Record clip"}</Button>
         ) : (
           <Link href="/billing" className={buttonClass({ variant: "ghost", size: "lg" })}>Clips need Pro</Link>
         )}
-        {remaining <= 0 && <Link href="/billing" className={buttonClass({ variant: "gradient", size: "lg" })}>Top up credits</Link>}
+        {sess.remaining <= 0 && <Link href="/billing" className={buttonClass({ variant: "gradient", size: "lg" })}>Top up credits</Link>}
       </div>
+      {sess.state === "connecting" && <p className="text-xs text-muted-foreground">{MESSAGES.reconnectHint}</p>}
 
       <div className="grid gap-6 rounded-lg border bg-card p-5 lg:grid-cols-[1fr_320px]">
         <div className="space-y-4">
@@ -278,8 +255,9 @@ export function Studio(p: StudioProps) {
         <div className="space-y-4">
           <div>
             <label htmlFor="cam" className="mb-2 flex items-center gap-2 text-sm font-medium"><Camera className="h-4 w-4" aria-hidden /> Camera</label>
-            <Select id="cam" value={deviceId} disabled={live} onChange={(e) => { setDeviceId(e.target.value); void startCamera(e.target.value); }}>
-              {devices.map((d, i) => <option key={d.deviceId} value={d.deviceId}>{d.label || `Camera ${i + 1}`}</option>)}
+            <Select id="cam" value={cam.deviceId} disabled={live || cam.busy} onChange={(e) => void camera.current?.start(e.target.value)}>
+              {cam.devices.length === 0 && <option value="">{cam.busy ? "Opening camera…" : "No camera available"}</option>}
+              {cam.devices.map((d, i) => <option key={d.deviceId} value={d.deviceId}>{d.label || `Camera ${i + 1}`}</option>)}
             </Select>
           </div>
           <div>

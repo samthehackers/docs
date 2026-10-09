@@ -51,6 +51,24 @@ for (const vp of VIEWPORTS) {
       expect(await overflowPx(page)).toBeLessThanOrEqual(0);
     });
 
+    test("pricing: billing details are readable and say how payment, renewal and refunds work", async ({ page }) => {
+      await page.goto("/pricing");
+      await expect(page.getByRole("heading", { name: "Billing details" })).toBeVisible();
+      for (const term of ["Renewal", "Cancelling", "Currency", "Payment methods", "Top-ups", "Refunds"]) await expect(page.getByText(term, { exact: true })).toBeVisible();
+      await expect(page.locator("main")).toContainText("non-refundable except where the law requires otherwise");
+      expect(await overflowPx(page)).toBeLessThanOrEqual(0);
+    });
+
+    test("the live-video status is visible without scrolling past the hero buttons, and the how-it-works strip fits", async ({ page }) => {
+      await page.goto("/");
+      const note = page.getByTestId("live-availability");
+      await expect(note).toBeVisible();
+      await expect(note).toContainText("hasn't been tested end to end");
+      await expect(page.getByRole("heading", { name: "How it works", level: 2 })).toBeVisible();
+      for (const step of ["1. Allow your camera", "2. Pick a look", "3. Go live", "4. Pay by the second"]) await expect(page.getByRole("heading", { name: step })).toBeVisible();
+      expect(await overflowPx(page)).toBeLessThanOrEqual(0);
+    });
+
     test("navigation is reachable at this width", async ({ page }) => {
       await page.goto("/");
       await expect(page.getByRole("link", { name: "AltrCam home" })).toBeVisible();
@@ -66,6 +84,22 @@ test.describe("content honesty", () => {
     await expect(page.locator("footer")).toContainText("Powered by Lucy 2.5 from Decart");
     await expect(page.locator("main")).not.toContainText("Decart");
     await expect(page.locator("main")).not.toContainText(/testimonial|trusted by|\d+\+? (users|customers)/i);
+  });
+  test("the live video is not promised: the page says it is untested, and the removed claims stay gone", async ({ page }) => {
+    for (const p of ["/", "/how-it-works", "/pricing", "/faq"]) {
+      await page.goto(p);
+      await expect(page.locator("main")).not.toContainText(/your face, their look|post it anywhere|no waiting|instantly|popular|high resolution|standard resolution/i);
+    }
+    for (const p of ["/", "/how-it-works"]) {
+      await page.goto(p);
+      await expect(page.getByTestId("live-availability")).toContainText("may not connect");
+    }
+  });
+  test("a signed-out visitor is sent to sign up, not straight to the studio", async ({ page }) => {
+    await page.goto("/");
+    await expect(page.getByRole("link", { name: "Try it free" })).toHaveAttribute("href", "/sign-up");
+    await expect(page.getByRole("link", { name: "Sign up to open the studio" })).toHaveAttribute("href", "/sign-up");
+    await expect(page.locator("main a[href='/studio']")).toHaveCount(0);
   });
   test("terms and privacy are clearly marked as templates", async ({ page }) => {
     for (const p of ["/terms", "/privacy"]) {

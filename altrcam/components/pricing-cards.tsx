@@ -3,16 +3,14 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { PRODUCTS, type Plan, type PlanConfig, type ProductId } from "@/lib/plans";
 import { priceLabel } from "@/lib/pricing";
-import { fmtNum } from "@/lib/utils";
+import { planFeatures } from "@/lib/public-copy";
 
-const mins = (s: number) => `${Math.round(s / 60)} min`;
-
-interface Tier { key: "FREE" | "PRO" | "LIFETIME"; product?: ProductId; price: string; cadence: string; highlight?: boolean }
+interface Tier { key: "FREE" | "PRO" | "LIFETIME"; product?: ProductId; price: string; cadence: string; highlight?: boolean; badge?: string }
 
 export function tiers(): Tier[] {
   return [
     { key: "FREE", price: "Free", cadence: "forever" },
-    { key: "PRO", product: "PRO_MONTHLY", price: priceLabel("PRO_MONTHLY"), cadence: "per month", highlight: true },
+    { key: "PRO", product: "PRO_MONTHLY", price: priceLabel("PRO_MONTHLY"), cadence: "per month", highlight: true, badge: "Subscription" },
     { key: "LIFETIME", product: "LIFETIME", price: priceLabel("LIFETIME"), cadence: "one time" },
   ];
 }
@@ -26,20 +24,13 @@ export function PricingCards({ plans, renderCta, current }: { plans: Record<Plan
           <Card key={t.key} className={t.highlight ? "border-primary glow" : ""}>
             <div className="flex items-center justify-between">
               <h3 className="text-lg font-semibold">{p.label}</h3>
-              {t.highlight && <Badge>Popular</Badge>}
+              {t.badge && <Badge>{t.badge}</Badge>}
               {current === t.key && <Badge>Current</Badge>}
             </div>
             <p className="mt-4 text-4xl font-bold">{t.price}</p>
             <p className="text-sm text-muted-foreground">{t.cadence}</p>
             <ul className="mt-6 space-y-2 text-sm">
-              {[
-                `${fmtNum(p.monthlyCredits)} credits every month`,
-                `Sessions up to ${mins(p.maxSessionSeconds)}`,
-                `${p.maxResolution === "high" ? "High" : "Standard"} resolution`,
-                `${p.presets} saved presets`,
-                p.historyDays ? `${p.historyDays}-day history` : "History forever",
-                p.clipRecording ? "Clip recording" : "Snapshots",
-              ].map((f) => (
+              {planFeatures(p).map((f) => (
                 <li key={f} className="flex gap-2"><Check className="mt-0.5 h-4 w-4 shrink-0 text-primary" aria-hidden />{f}</li>
               ))}
             </ul>

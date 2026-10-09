@@ -31,3 +31,10 @@ This was built in a sandbox with no network access to fal.ai, Clerk, Supabase, P
 - Rate limiting is a no-op in development when Upstash isn't configured; in production a missing limiter errors loudly.
 - The CSP allows `'unsafe-inline'` scripts (Clerk and Next inline bootstraps). Tightening to nonces is future work.
 - Unauthenticated requests to protected pages return Clerk's default (redirect to sign-in in a browser; 404 for non-HTML clients).
+
+## What the public pages say
+- The landing page, `/how-it-works` and the FAQ say that live video **has not been tested end to end** and **may not connect**, and that credits count from Go live even if the connection fails. One wording (`lib/availability.ts`). Change it only after a real session has been run (GO_LIVE.md, section 7).
+- They also state, from what the code does: the camera preview stays in the browser; video goes to a third-party AI service only after Go live; video only, no audio; snapshots are saved on every plan, clips only on plans with clip recording (read from the plan config, so an admin change shows up within a minute).
+- `/pricing` has a "Billing details" list (renewal, cancelling, currency, which payment method covers what, top-ups, refund position). It mirrors checkout, the webhooks and the Terms; the Terms themselves are still template text.
+- "Resolution" on pricing cards is now worded as **camera capture size**, which is what the plan setting controls.
+- The pages have been checked by rendering them in unit tests and in the credential-free browser suite. They have not been reviewed by a lawyer, and no wording here was checked against fal's or Decart's terms.

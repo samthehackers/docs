@@ -138,6 +138,8 @@ A bad signature returns 401, so a wrong secret shows up as webhook deliveries fa
 
 Also compare what fal actually **bills** for that session against the credits the app deducted.
 
+**When a real session has worked, update what the public pages say.** Until then the landing page, `/how-it-works` and the FAQ tell visitors that live video has not been tested end to end and may not connect (`lib/availability.ts`; one wording, shown in all three places). After you have run and checked a session, replace that wording with what you actually tested, or remove the `AvailabilityNotice` uses and the FAQ entry "Does the live video work yet?". Do not leave "not tested" up after it has been, and do not take it down before.
+
 ## 8. End-to-end test (test mode)
 - [ ] **Sign up with Google**: land on `/dashboard`; a `users` row exists with your FREE allowance (`signup_grant` in `credit_ledger`).
 - [ ] **Email + password sign-up**: verification email arrives; reset-password works; 2FA can be enabled in Settings; Settings → Security (Clerk) lists your signed-in devices and lets you revoke each one. Clerk has no single "sign out everywhere" button, so don't promise one.

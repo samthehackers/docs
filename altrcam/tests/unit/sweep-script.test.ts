@@ -14,13 +14,15 @@ const SECRET = "s3cr3t-value-that-must-never-be-printed";
 type Seen = { url: string; auth: string | undefined };
 let server: http.Server;
 let base = "";
+let port = "";
 let seen: Seen[] = [];
 let handler: (req: http.IncomingMessage, res: http.ServerResponse, n: number) => void = (_q, r) => r.end();
 
 beforeAll(async () => {
   server = http.createServer((req, res) => { seen.push({ url: req.url ?? "", auth: req.headers.authorization }); handler(req, res, seen.length); });
   await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
-  base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  port = String((server.address() as AddressInfo).port);
+  base = `http://127.0.0.1:${port}`;
 });
 afterAll(() => { server.closeAllConnections?.(); server.close(); });
 beforeEach(() => { seen = []; handler = (_q, r) => r.end(); });
@@ -110,19 +112,54 @@ describe("sweep.sh", () => {
     never(r);
   });
   it("refuses a non-https, non-localhost URL with its own config error (exit 2) before sending anything", async () => {
-    for (const url of ["http://altrcam.com", "ftp://x.example", "altrcam.com", "https://"]) {
+    for (const url of ["http://altrcam.com", "ftp://x.example", "altrcam.com", "https://", "https:///path"]) {
       const r = await run([], { ALTRCAM_URL: url });
       expect(r.code, url).toBe(2);
       expect(r.err, url).toMatch(/https/);
     }
-    expect((await run([], { ALTRCAM_URL: "" })).code).not.toBe(0); // empty counts as not set
     expect(seen).toEqual([]);
   });
-  it("fails with a clear message when not configured", async () => {
-    const a = await run([], { ALTRCAM_URL: undefined });
-    expect(a.code).not.toBe(0); expect(a.err).toMatch(/ALTRCAM_URL/);
-    const b = await run([], { CRON_SECRET: undefined });
-    expect(b.code).not.toBe(0); expect(b.err).toMatch(/CRON_SECRET/);
+  it("refuses look-alike hosts and user info, which a prefix check would let through, and does not echo the URL", async () => {
+    // Each of these starts with an allowed prefix but points somewhere else. The 127.0.0.2 ones would reach this very
+    // test server if they were accepted, so a wrongly accepted URL shows up as a request in `seen`.
+    const bad = [
+      `http://localhost@127.0.0.2:${port}`,
+      `http://127.0.0.1@127.0.0.2:${port}`,
+      "http://localhost.evil.test",
+      "http://127.0.0.1.evil.test",
+      "http://localhostx",
+      "https://user:hunter2@altrcam.com",
+      "https://altrcam.com@evil.test",
+      "https://altrcam.com\\@evil.test",
+      "https://altrcam .com",
+    ];
+    for (const url of bad) {
+      const r = await run([], { ALTRCAM_URL: url });
+      expect(r.code, url).toBe(2);
+      expect(r.err, url).toMatch(/https/);
+      expect(r.out + r.err, url).not.toContain("hunter2");
+    }
+    expect(seen).toEqual([]);
+  });
+  it("accepts https hosts with a port or path, and http only for exactly localhost / 127.0.0.1", async () => {
+    for (const url of [`http://127.0.0.1:${port}`, `http://127.0.0.1:${port}/`, `http://localhost:${port}`]) {
+      handler = (_q, res) => json(res, 200, { closed: 0 });
+      const r = await run([], { ALTRCAM_URL: url, SWEEP_ATTEMPTS: "1" });
+      // localhost may resolve to ::1 on some machines; what matters is that it was ACCEPTED (not exit 2).
+      expect(r.code, url).not.toBe(2);
+    }
+  });
+  it("treats missing or empty ALTRCAM_URL / CRON_SECRET as a configuration error (exit 2), as the header promises", async () => {
+    for (const [name, env] of [
+      ["ALTRCAM_URL unset", { ALTRCAM_URL: undefined }],
+      ["ALTRCAM_URL empty", { ALTRCAM_URL: "" }],
+      ["CRON_SECRET unset", { CRON_SECRET: undefined }],
+      ["CRON_SECRET empty", { CRON_SECRET: "" }],
+    ] as const) {
+      const r = await run([], env);
+      expect(r.code, name).toBe(2);
+      expect(r.err, name).toMatch(/ALTRCAM_URL|CRON_SECRET/);
+    }
     expect(seen).toEqual([]);
   });
 });

@@ -1,19 +1,6 @@
 import { unstable_rethrow } from "next/navigation";
-import { auth } from "@clerk/nextjs/server";
-import { clerkConfigured } from "@/lib/config";
-
-/**
- * The signed-in user's id, or null. Public pages use this to pick links (studio vs sign-up). It never calls Clerk when
- * Clerk isn't configured, so those pages still render on a deployment with no credentials, and a Clerk error reads as signed out.
- */
+import { createClient } from "@/lib/supabase/server";
 export async function viewerId(): Promise<string | null> {
-  if (!clerkConfigured()) return null;
-  try {
-    return (await auth()).userId ?? null;
-  } catch (e) {
-    unstable_rethrow(e); // Next's own signals (static-to-dynamic bailout, redirects) must pass through, or the route is rendered wrongly
-    // A public page must keep rendering if Clerk misbehaves; the visitor just sees the signed-out buttons.
-    console.error("[viewer] could not read the session:", e instanceof Error ? e.message : e);
-    return null;
-  }
+  try { const { data: { user } } = await (await createClient()).auth.getUser(); return user?.id ?? null; }
+  catch (e) { unstable_rethrow(e); console.error("[viewer] could not read the session:", e instanceof Error ? e.message : e); return null; }
 }

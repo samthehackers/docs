@@ -4,7 +4,9 @@
  */
 const has = (...names: string[]) => names.every((n) => Boolean(process.env[n]));
 
-export const clerkConfigured = () => has("NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY", "CLERK_SECRET_KEY");
+export const supabaseConfigured = () => has("NEXT_PUBLIC_SUPABASE_URL", "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY");
+/** Kept as a compatibility alias for older feature gates during the auth migration. */
+export const clerkConfigured = supabaseConfigured;
 
 export function capabilities() {
   return {
@@ -26,7 +28,7 @@ export function capabilities() {
  * that then fails at the first app page (no database to hold their credits). This is environment presence only: a wrong, paused or
  * unmigrated database is not detected. Every public page that offers sign-up uses this one answer, so they cannot disagree.
  */
-export const accountsOpen = () => clerkConfigured() && has("DATABASE_URL");
+export const accountsOpen = () => supabaseConfigured() && has("DATABASE_URL");
 
 /** Whether checkout can work at all: accounts, and at least one payment provider. */
 export const paymentsOpen = () => accountsOpen() && (has("PAYSTACK_SECRET_KEY") || has("NOWPAYMENTS_API_KEY", "NOWPAYMENTS_IPN_SECRET"));

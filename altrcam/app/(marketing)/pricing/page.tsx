@@ -23,7 +23,7 @@ const CURRENCY_TABS: { c: Currency; label: string; note: string }[] = [
   { c: "USD", label: "Crypto · USD", note: "Crypto payments through NOWPayments are priced in US dollars. Subscriptions can't be paid with crypto." },
 ];
 
-export default async function Pricing({ searchParams }: { searchParams?: Promise<{ currency?: string }> } = {}) {
+export default async function Pricing({ searchParams }: { searchParams?: Promise<{ currency?: string }> }) {
   const plans = await getPlans();
   const sp = (await searchParams) ?? {};
   const view: Currency = sp.currency === "USD" ? "USD" : "NGN"; // NGN by default; anything else is ignored

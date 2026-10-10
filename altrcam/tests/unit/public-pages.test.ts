@@ -69,7 +69,7 @@ const count = (s: string, needle: string) => s.split(needle).length - 1;
 
 const landing = async () => html((await Landing()) as ReactElement);
 const how = async () => html((await HowItWorks()) as ReactElement);
-const pricing = async () => html((await Pricing()) as ReactElement);
+const pricing = async () => html((await Pricing({})) as ReactElement);
 const faq = () => html(Faq() as ReactElement);
 const layout = async () => html((await MarketingLayout({ children: null })) as ReactElement);
 

@@ -16,6 +16,7 @@ const schema = z.object({
   FAL_COST_PER_SECOND_USD: optionalNumber((n) => n > 0, "must be a positive number of US dollars per second"),
   FX_NGN_PER_USD: optionalNumber((n) => n > 0, "must be a positive number of naira per US dollar"),
   MIN_MARGIN: optionalNumber((n) => n >= 0 && n < 1, "must be a number from 0 to just under 1 (0.5 = 50%)"),
+  LIFETIME_MONTHLY_CREDITS: optionalNumber((n) => Number.isInteger(n) && n >= 0 && n <= 1_000_000, "must be a whole number of credits from 0 to 1000000"),
   NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: z.string().min(1),
   CLERK_SECRET_KEY: z.string().min(1),
   CLERK_WEBHOOK_SECRET: z.string().min(1),

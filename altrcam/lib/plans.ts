@@ -28,11 +28,29 @@ export interface PlanConfig {
   clipRecording: boolean;
 }
 
-/** Defaults. Admin overrides live in the plan_config table; read effective limits with getPlans() in lib/plan-config.ts. */
+/** Lifetime's default monthly allowance when LIFETIME_MONTHLY_CREDITS is unset. */
+export const DEFAULT_LIFETIME_MONTHLY_CREDITS = 2000;
+
+/**
+ * LIFETIME_MONTHLY_CREDITS, read at call time: a whole number from 0 to 1,000,000 (the admin form's bounds). Unset or invalid
+ * gives the default (an invalid value is reported by lib/env.ts envIssues and preflight). An admin override still wins.
+ */
+export function lifetimeMonthlyCredits(env: Record<string, string | undefined> = process.env): number {
+  const v = env.LIFETIME_MONTHLY_CREDITS;
+  if (v === undefined || v.trim() === "") return DEFAULT_LIFETIME_MONTHLY_CREDITS;
+  const n = Number(v);
+  return Number.isInteger(n) && n >= 0 && n <= 1_000_000 ? n : DEFAULT_LIFETIME_MONTHLY_CREDITS;
+}
+
+/**
+ * Defaults. Admin overrides live in the plan_config table; read effective limits with getPlans() in lib/plan-config.ts.
+ * Lifetime has Pro's limits except its monthly allowance (LIFETIME_MONTHLY_CREDITS, a getter so the env is read when the
+ * defaults are copied) and history that never expires.
+ */
 export const DEFAULT_PLANS: Record<Plan, PlanConfig> = {
   FREE: { label: "Free", monthlyCredits: 300, maxSessionSeconds: 120, maxResolution: "low", presets: 3, historyDays: 7, clipRecording: false },
   PRO: { label: "Pro", monthlyCredits: 6000, maxSessionSeconds: 1800, maxResolution: "high", presets: 100, historyDays: 365, clipRecording: true },
-  LIFETIME: { label: "Lifetime", monthlyCredits: 6000, maxSessionSeconds: 1800, maxResolution: "high", presets: 100, historyDays: null, clipRecording: true },
+  LIFETIME: { label: "Lifetime", get monthlyCredits() { return lifetimeMonthlyCredits(); }, maxSessionSeconds: 1800, maxResolution: "high", presets: 100, historyDays: null, clipRecording: true },
 };
 
 /**
@@ -64,7 +82,7 @@ const priceEnv = (base: string): Record<Currency, string> => ({ NGN: `PRICE_${ba
 export const PRODUCTS: Record<ProductId, ProductConfig> = {
   PRO_MONTHLY: { id: "PRO_MONTHLY", kind: "subscription", label: "Pro (monthly)", plan: "PRO", credits: DEFAULT_PLANS.PRO.monthlyCredits, periodDays: 31, priceEnv: priceEnv("PRO_MONTHLY") },
   PRO_YEARLY: { id: "PRO_YEARLY", kind: "subscription", label: "Pro (yearly)", plan: "PRO", credits: DEFAULT_PLANS.PRO.monthlyCredits, periodDays: 366, priceEnv: priceEnv("PRO_YEARLY") },
-  LIFETIME: { id: "LIFETIME", kind: "lifetime", label: "Lifetime", plan: "LIFETIME", credits: DEFAULT_PLANS.LIFETIME.monthlyCredits, priceEnv: priceEnv("LIFETIME") },
+  LIFETIME: { id: "LIFETIME", kind: "lifetime", label: "Lifetime", plan: "LIFETIME", credits: DEFAULT_LIFETIME_MONTHLY_CREDITS, priceEnv: priceEnv("LIFETIME") },
   TOPUP_1K: { id: "TOPUP_1K", kind: "topup", label: "1,000 credits", credits: 1000, priceEnv: priceEnv("TOPUP_1K") },
   TOPUP_5K: { id: "TOPUP_5K", kind: "topup", label: "5,000 credits", credits: 5000, priceEnv: priceEnv("TOPUP_5K") },
   TOPUP_15K: { id: "TOPUP_15K", kind: "topup", label: "15,000 credits", credits: 15000, priceEnv: priceEnv("TOPUP_15K") },

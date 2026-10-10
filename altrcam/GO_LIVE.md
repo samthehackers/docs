@@ -69,18 +69,22 @@ All optional: the site runs without them, it just sells nothing that is not full
 | `FX_NGN_PER_USD` | Naira per US dollar, to compare NGN prices with the USD cost. **Unset = nothing priced in NGN is on sale.** Use a rate you are comfortable with (a cautious one is safer); it is not fetched automatically |
 | `MIN_MARGIN` | Minimum gross margin, from 0 to just under 1. Default `0.5` (50%). Set but invalid = nothing paid is on sale |
 
+**Lifetime allowance**: `LIFETIME_MONTHLY_CREDITS` (whole number, default `2000`) is the Lifetime plan's default monthly credits, granted at purchase and refilled monthly. An allowance set in Admin → Plans still wins over it.
+
 Full usage is: Pro monthly = one month's allowance; Pro yearly = 12 months; Lifetime = 36 months of its monthly allowance; a top-up = its credits. The allowances are the **effective** ones (Admin → Plans), so raising an allowance there can take a product off sale. Payment fees and the cost of free users are not included. `npm run preflight` prints the table (`npx tsx scripts/preflight.ts --margin-only` prints only the table).
 
-Worked example, **not proposed prices**: what the guard demands with today's default allowances if fal really costs the unverified $0.04/s from section 1, at an illustrative (not current) rate of 1,500 NGN/USD. A unit test (`tests/unit/margin.test.ts`) fails if this example ever loses money, and it covers every product that can be priced (Lifetime only in USD here: at 6,000 credits a month its NGN minimum, ₦25,920,000, is more than a payment row can hold).
+Worked example, **not proposed prices**: what the guard demands with today's default allowances if fal really costs the unverified $0.04/s from section 1, at an illustrative (not current) rate of 1,500 NGN/USD. A unit test (`tests/unit/margin.test.ts`) fails if this example ever loses money, and it covers every product that can be priced. Lifetime is at its default of 2,000 credits a month (`LIFETIME_MONTHLY_CREDITS`); top-ups are priced so the 20% Lifetime-member discount passes too.
 
 <!-- margin-example:begin -->
 ```env
 FAL_COST_PER_SECOND_USD=0.04
 FX_NGN_PER_USD=1500
 MIN_MARGIN=0.5
+LIFETIME_MONTHLY_CREDITS=2000
 PRICE_PRO_MONTHLY_NGN=75000000
 PRICE_PRO_YEARLY_NGN=900000000
-PRICE_LIFETIME_USD=1800000
+PRICE_LIFETIME_NGN=900000000
+PRICE_LIFETIME_USD=600000
 PRICE_TOPUP_1K_NGN=16000000
 PRICE_TOPUP_1K_USD=11000
 PRICE_TOPUP_5K_NGN=80000000
@@ -90,7 +94,7 @@ PRICE_TOPUP_15K_USD=165000
 ```
 <!-- margin-example:end -->
 
-That is ₦750,000 a month for Pro, $18,000 for Lifetime and ₦160,000 for 1,000 credits: at $0.04/s the current allowances cannot be sold at ordinary prices. Confirm the real cost, then lower the allowances (Admin → Plans) or raise prices until the table passes.
+That is ₦750,000 a month for Pro, ₦9,000,000 (or $6,000) for Lifetime and ₦160,000 for 1,000 credits: at $0.04/s the current allowances cannot be sold at ordinary prices. Confirm the real cost, then lower the allowances (Admin → Plans) or raise prices until the table passes.
 <!-- END pricing-env (stream A4) -->
 
 ### The database (already created)

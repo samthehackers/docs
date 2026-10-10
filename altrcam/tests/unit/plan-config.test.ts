@@ -1,10 +1,10 @@
-import { beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { eq, sql } from "drizzle-orm";
 import { testDb } from "./helpers";
 import type { DB } from "@/lib/db";
 import { auditLog, planConfig, users } from "@/db/schema";
 import { getPlan, getPlans, PlanInput, resetPlanConfig, setPlanConfig } from "@/lib/plan-config";
-import { DEFAULT_PLANS } from "@/lib/plans";
+import { DEFAULT_LIFETIME_MONTHLY_CREDITS, DEFAULT_PLANS, lifetimeMonthlyCredits } from "@/lib/plans";
 import { fulfilPayment } from "@/lib/payments/fulfil";
 import { ledgerBalance, grantCredits, resetMonthly } from "@/lib/credits";
 import { provisionUser } from "@/lib/users";
@@ -98,5 +98,40 @@ describe("limits are actually used", () => {
     await setPlanConfig(d, "FREE", { ...DEFAULT_PLANS.FREE, monthlyCredits: 0 }, "admin1");
     expect(await provisionUser({ id: "new2", email: "n2@x.co", name: "N" }, d)).toBe(true);
     expect((await ledgerBalance(d, "new2")).total).toBe(0);
+  });
+});
+
+describe("the Lifetime allowance (LIFETIME_MONTHLY_CREDITS)", () => {
+  beforeEach(async () => { await d.insert(users).values({ id: "u1", email: "a@b.co", name: "A" }); delete process.env.LIFETIME_MONTHLY_CREDITS; });
+  afterEach(() => { delete process.env.LIFETIME_MONTHLY_CREDITS; });
+  const life = { provider: "paystack" as const, eventId: "eL", eventType: "charge.success", payload: {}, reference: "rL", userId: "u1", product: "LIFETIME" as const, amountMinor: 9900000, currency: "NGN" };
+
+  it("defaults to 2,000 credits a month and otherwise keeps Pro's limits, with no history expiry", () => {
+    expect(DEFAULT_LIFETIME_MONTHLY_CREDITS).toBe(2000);
+    expect(lifetimeMonthlyCredits({})).toBe(2000);
+    expect(DEFAULT_PLANS.LIFETIME.monthlyCredits).toBe(2000);
+    const strip = (p: typeof DEFAULT_PLANS.PRO) => ({ maxSessionSeconds: p.maxSessionSeconds, maxResolution: p.maxResolution, presets: p.presets, clipRecording: p.clipRecording });
+    expect(strip(DEFAULT_PLANS.LIFETIME)).toEqual(strip(DEFAULT_PLANS.PRO));
+    expect(DEFAULT_PLANS.LIFETIME.historyDays).toBeNull();
+  });
+  it("is read from the env when the defaults are read; invalid values fall back to the default", () => {
+    process.env.LIFETIME_MONTHLY_CREDITS = "1500";
+    expect(DEFAULT_PLANS.LIFETIME.monthlyCredits).toBe(1500);
+    expect({ ...DEFAULT_PLANS.LIFETIME }.monthlyCredits).toBe(1500);
+    for (const bad of ["-1", "1.5", "lots", "2000000"]) expect(lifetimeMonthlyCredits({ LIFETIME_MONTHLY_CREDITS: bad }), bad).toBe(2000);
+    expect(lifetimeMonthlyCredits({ LIFETIME_MONTHLY_CREDITS: "0" })).toBe(0);
+  });
+  it("flows into the effective plans and into fulfilment: buying Lifetime grants that allowance", async () => {
+    process.env.LIFETIME_MONTHLY_CREDITS = "1500";
+    expect((await getPlans(d)).LIFETIME.monthlyCredits).toBe(1500);
+    await fulfilPayment(life, d);
+    expect((await ledgerBalance(d, "u1")).monthly).toBe(1500);
+  });
+  it("an admin override still wins over the env", async () => {
+    process.env.LIFETIME_MONTHLY_CREDITS = "1500";
+    await setPlanConfig(d, "LIFETIME", { ...DEFAULT_PLANS.LIFETIME, monthlyCredits: 800 }, "admin1");
+    expect((await getPlans(d)).LIFETIME.monthlyCredits).toBe(800);
+    await fulfilPayment(life, d);
+    expect((await ledgerBalance(d, "u1")).monthly).toBe(800);
   });
 });

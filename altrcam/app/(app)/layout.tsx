@@ -1,4 +1,5 @@
 import { cookies } from "next/headers";
+import { unstable_rethrow } from "next/navigation";
 import { AccountMenu } from "@/components/account-menu";
 import { AppHeader } from "@/components/app-header";
 import { NotificationBell } from "@/components/notification-bell";
@@ -12,6 +13,21 @@ import { parseRefCookie } from "@/lib/referral-cookie";
 import { REFERRAL } from "@/lib/plans";
 import { ADMIN_LINK, APP_LINKS } from "@/lib/nav";
 
+/**
+ * The header's extras (notifications, the Admin link) must never take the page down: this layout sits above app/(app)/error.tsx,
+ * so an error thrown here escapes that boundary and replaces the whole shell. A failure is logged and the header degrades
+ * (no bell, no Admin link) while the page still renders. Next's own signals (redirects, dynamic bailouts) pass through.
+ */
+async function orFallback<T>(what: string, load: () => Promise<T>, fallback: T): Promise<T> {
+  try {
+    return await load();
+  } catch (e) {
+    unstable_rethrow(e);
+    console.error(`[app shell] ${what} failed; showing the header without it:`, e instanceof Error ? e.message : e);
+    return fallback;
+  }
+}
+
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const user = await requireAppUser();
 
@@ -22,14 +38,17 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   if (ref && !user.referredBy && Date.now() - user.createdAt.getTime() <= REFERRAL.claimWindowDays * 86_400_000) {
     await claimReferral(db(), user.id, ref.code, { clickedAt: ref.clickedAt }).catch((e) => console.error("[referral] claim failed", e));
   }
-  const [items, unread, admin] = await Promise.all([listNotifications(db(), user.id), unreadCount(db(), user.id), isAdmin(user.id)]);
+  const [notes, admin] = await Promise.all([
+    orFallback("notifications", () => Promise.all([listNotifications(db(), user.id), unreadCount(db(), user.id)]), null),
+    orFallback("admin check", () => isAdmin(user.id), false),
+  ]);
   const links = admin ? [...APP_LINKS, { ...ADMIN_LINK, className: "text-accent" }] : APP_LINKS;
   return (
     <div className="flex min-h-screen flex-col">
       <SkipLink />
       <AppHeader
         links={links}
-        bell={<NotificationBell unread={unread} initial={items.map((n) => ({ ...n, readAt: n.readAt?.toISOString() ?? null, createdAt: n.createdAt.toISOString() }))} />}
+        bell={notes && <NotificationBell unread={notes[1]} initial={notes[0].map((n) => ({ ...n, readAt: n.readAt?.toISOString() ?? null, createdAt: n.createdAt.toISOString() }))} />}
         account={<AccountMenu name={user.name} email={user.email} avatarUrl={user.avatarUrl} />}
       />
       <main id="content" className="mx-auto w-full max-w-6xl flex-1 px-4 py-8">{children}</main>

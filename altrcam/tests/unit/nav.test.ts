@@ -13,7 +13,7 @@ import type { ReactElement } from "react";
 const h = vi.hoisted(() => ({
   me: null as string | null, path: "/" as string | null, hookCalls: 0,
   clerkUser: null as null | { imageUrl?: string; fullName?: string | null },
-  admin: false, notificationsFail: false,
+  admin: false, notificationsFail: false, adminFails: false, notificationsError: null as null | Error,
 }));
 vi.mock("@clerk/nextjs", () => ({
   useUser: () => { h.hookCalls++; return { isLoaded: !!h.clerkUser, user: h.clerkUser ?? undefined }; },
@@ -28,10 +28,10 @@ vi.mock("@/lib/session-user", () => ({
 }));
 vi.mock("@/lib/db", () => ({ db: () => ({}) }));
 vi.mock("@/lib/notifications", () => ({
-  listNotifications: async () => { if (h.notificationsFail) throw new Error("db down"); return []; },
+  listNotifications: async () => { if (h.notificationsFail) throw h.notificationsError ?? new Error("db down"); return []; },
   unreadCount: async () => { if (h.notificationsFail) throw new Error("db down"); return 0; },
 }));
-vi.mock("@/lib/api", () => ({ isAdmin: async () => h.admin }));
+vi.mock("@/lib/api", () => ({ isAdmin: async () => { if (h.adminFails) throw new Error("clerk api down"); return h.admin; } }));
 
 import MarketingLayout from "@/app/(marketing)/layout";
 import AppLayout from "@/app/(app)/layout";
@@ -42,7 +42,7 @@ import { ACCOUNT_LINKS, APP_LINKS, headerAuth, isCurrent, PAGE_LINKS } from "@/l
 beforeAll(() => { (globalThis as { React?: unknown }).React = React; });
 const ENV = { ...process.env };
 const open = () => { process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY = "pk_test_x"; process.env.CLERK_SECRET_KEY = "sk_test_x"; process.env.DATABASE_URL = "postgres://x"; process.env.SIGNUPS_OPEN = "true"; };
-beforeEach(() => { h.me = null; h.path = "/"; h.hookCalls = 0; h.clerkUser = null; h.admin = false; h.notificationsFail = false; open(); });
+beforeEach(() => { h.me = null; h.path = "/"; h.hookCalls = 0; h.clerkUser = null; h.admin = false; h.notificationsFail = false; h.adminFails = false; h.notificationsError = null; open(); });
 afterEach(() => { process.env = { ...ENV }; });
 
 const html = (el: ReactElement) => renderToStaticMarkup(el);
@@ -203,5 +203,67 @@ describe("the signed-in shell's header", () => {
   });
   it("uses our account menu, not Clerk's UserButton, so both headers offer the same items", () => {
     for (const f of ["app/(app)/layout.tsx", "components/app-header.tsx"]) expect(readFileSync(f, "utf8")).not.toMatch(/UserButton/);
+  });
+});
+
+describe("the signed-in shell when the header's extras fail", () => {
+  const shell = async () => html((await AppLayout({ children: "PAGE_BODY" })) as ReactElement);
+  it("normally has the notification bell", async () => {
+    expect(await shell()).toMatch(/aria-label="Notifications/);
+  });
+  it("a failing notification query: no bell, the rest of the header and the page still render, and it is logged", async () => {
+    h.notificationsFail = true;
+    const err = vi.spyOn(console, "error").mockImplementation(() => {});
+    const s = await shell();
+    expect(s).not.toMatch(/aria-label="Notifications/);
+    expect(s).toContain("PAGE_BODY");
+    expect(s).toContain('aria-label="Account menu"');
+    expect(err).toHaveBeenCalledWith(expect.stringContaining("notifications failed"), "db down");
+    err.mockRestore();
+  });
+  it("a failing admin check (Clerk's API): no Admin link, nothing else lost", async () => {
+    h.admin = true; h.adminFails = true;
+    const err = vi.spyOn(console, "error").mockImplementation(() => {});
+    const s = await shell();
+    expect(s).not.toContain('href="/admin"');
+    expect(s).toMatch(/aria-label="Notifications/);
+    expect(s).toContain("PAGE_BODY");
+    err.mockRestore();
+  });
+  it("both failing at once still renders the page", async () => {
+    h.notificationsFail = true; h.adminFails = true;
+    const err = vi.spyOn(console, "error").mockImplementation(() => {});
+    expect(await shell()).toContain("PAGE_BODY");
+    err.mockRestore();
+  });
+  it("Next's own signals are not swallowed (a redirect thrown while loading still redirects)", async () => {
+    h.notificationsFail = true;
+    h.notificationsError = Object.assign(new Error("NEXT_REDIRECT"), { digest: "NEXT_REDIRECT;replace;/sign-in;307;" });
+    await expect(AppLayout({ children: null })).rejects.toMatchObject({ digest: expect.stringContaining("NEXT_REDIRECT") });
+  });
+});
+
+describe("error and 404 pages", () => {
+  it("app/error.tsx and app/global-error.tsx: branded, a Retry button that calls reset, a link to /contact, and the reference", async () => {
+    const { default: RootError } = await import("@/app/error");
+    const { default: GlobalError } = await import("@/app/global-error");
+    const err = vi.spyOn(console, "error").mockImplementation(() => {});
+    for (const C of [RootError, GlobalError]) {
+      const s = html(React.createElement(C, { error: Object.assign(new Error("boom"), { digest: "d1g3st" }), reset: () => {} }));
+      expect(s).toContain('aria-label="AltrCam home"');
+      expect(s).toMatch(/<button[^>]*>Retry<\/button>/);
+      expect(hrefs(s)).toEqual(expect.arrayContaining(["/contact", "/"]));
+      expect(plain(s)).toContain("Reference: d1g3st");
+      expect(plain(s)).not.toContain("boom"); // the message itself is not shown to visitors
+    }
+    expect(html(React.createElement(GlobalError, { error: new Error("x"), reset: () => {} }))).toMatch(/^<html lang="en"/);
+    err.mockRestore();
+  });
+  it("the 404 has a title and links to Pricing, How it works and Contact", async () => {
+    const mod = await import("@/app/not-found");
+    expect(mod.metadata).toEqual({ title: "Page not found" });
+    const s = html(React.createElement(mod.default));
+    expect(plain(s)).toContain("That page doesn't exist.");
+    expect(hrefs(s)).toEqual(["/", "/pricing", "/how-it-works", "/contact"]);
   });
 });

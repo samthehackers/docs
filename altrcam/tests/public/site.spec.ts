@@ -196,6 +196,11 @@ test.describe("without credentials the app fails honestly, not randomly", () => 
     const res = await page.goto("/definitely-not-a-page");
     expect(res?.status()).toBe(404);
     await expect(page.getByText("That page doesn't exist")).toBeVisible();
+    await expect(page).toHaveTitle("Page not found · AltrCam");
+    const elsewhere = page.getByRole("navigation", { name: "Elsewhere on AltrCam" });
+    for (const [name, href] of [["Pricing", "/pricing"], ["How it works", "/how-it-works"], ["Contact", "/contact"]]) {
+      await expect(elsewhere.getByRole("link", { name })).toHaveAttribute("href", href);
+    }
     expect((await request.get("/sign-inn")).status()).toBe(404);
   });
   test("health reports nothing configured and leaks no values", async ({ request }) => {

@@ -31,6 +31,8 @@ export const subscriptions = pgTable("subscriptions", {
   userId: text("user_id").notNull().references(() => users.id),
   provider: text("provider").notNull(),
   providerSubId: text("provider_sub_id").notNull(),
+  /** Paystack customer_code (CUS_...): renewals and failed invoices are matched by it (and the subscription code), not by email. */
+  customerCode: text("customer_code"),
   emailToken: text("email_token"),
   plan: planEnum("plan").notNull(),
   status: text("status").notNull(),

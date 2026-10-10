@@ -18,6 +18,8 @@ export interface VerifiedPayment {
   currency: string;
   metadata: { userId?: string; product?: string };
   customerEmail?: string;
+  /** Paystack customer_code (CUS_...), when the provider has one. */
+  customerCode?: string;
   planCode?: string;
   subscriptionCode?: string;
 }

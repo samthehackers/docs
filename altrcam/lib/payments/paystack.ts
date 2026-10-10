@@ -67,6 +67,7 @@ export const paystack: PaymentProvider = {
       currency: String(d.currency).toUpperCase(),
       metadata: typeof d.metadata === "object" && d.metadata ? { userId: d.metadata.userId, product: d.metadata.product } : {},
       customerEmail: d.customer?.email,
+      customerCode: d.customer?.customer_code,
       planCode: d.plan_object?.plan_code ?? d.plan?.plan_code,
     };
   },

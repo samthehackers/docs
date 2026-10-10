@@ -12,7 +12,7 @@ export function PollStatus({ reference }: { reference: string }) {
   useEffect(() => {
     if (status === "success" || tries > 40) return;
     const t = setTimeout(async () => {
-      const r = await fetch(`/api/payments/status?ref=${encodeURIComponent(reference)}`).catch(() => null);
+      const r = await fetch(`/api/payments/status?reference=${encodeURIComponent(reference)}`).catch(() => null);
       if (r?.ok) setStatus((await r.json()).status);
       setTries((n) => n + 1);
     }, tries === 0 ? 0 : 3000);

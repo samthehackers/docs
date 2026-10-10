@@ -55,6 +55,14 @@ export function cleanDatabaseUrl(raw: string): CleanedUrl {
   return { url: qs ? `${base}?${qs}` : base, dropped };
 }
 
+/** A transaction-pooler URL: port 6543, or a host with `pooler` in it. */
+export function isPoolerUrl(url: string): boolean {
+  try {
+    const u = new URL(url.replace(/^postgres(ql)?:/, "http:"));
+    return u.port === "6543" || u.hostname.includes("pooler");
+  } catch { return false; }
+}
+
 /** Hosted Supabase requires TLS. If the URL says nothing about SSL and points at Supabase, require it. */
 export function sslFor(url: string): "require" | undefined {
   const q = url.indexOf("?");

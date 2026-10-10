@@ -1,7 +1,7 @@
 import postgres from "postgres";
 import { drizzle } from "drizzle-orm/postgres-js";
 import * as schema from "@/db/schema";
-import { cleanDatabaseUrl, databaseUrl, postgresOptions } from "@/lib/database-url";
+import { cleanDatabaseUrl, databaseUrl, isPoolerUrl, postgresOptions } from "@/lib/database-url";
 
 declare global {
   // eslint-disable-next-line no-var
@@ -15,7 +15,8 @@ function client() {
     // Integration URLs carry parameters postgres.js would send to the server as startup parameters (and fail); strip them.
     // prepare:false is required for Supabase's transaction pooler.
     const { url } = cleanDatabaseUrl(raw);
-    globalThis.__sql = postgres(url, postgresOptions(url, { max: 5 }));
+    // Few connections per instance behind a pooler: serverless scale-out multiplies this by the number of instances.
+    globalThis.__sql = postgres(url, postgresOptions(url, { max: isPoolerUrl(url) ? 2 : 5 }));
   }
   return globalThis.__sql;
 }

@@ -14,9 +14,10 @@ vi.mock("@/lib/supabase/server", () => ({
 
 import { GET as callback } from "@/app/auth/callback/route";
 import { GET as confirm } from "@/app/auth/confirm/route";
-import { authErrorMessage, safeNextPath } from "@/lib/safe-redirect";
+import { authErrorMessage, safeNextPath, sameOriginUrl } from "@/lib/safe-redirect";
 
 const ORIGIN = "https://altrcam.vercel.app";
+const DOT_BYPASSES = ["/.//evil.com", "/a/..//evil.com", "/..//evil.com", "/%2e//evil.com", "/%2e%2e//evil.com", "/%252e%252e//evil.com", "/%252e//evil.com", "/./%2fevil.com", "/a/%2e%2e/%2fevil.com", "/.%2f/evil.com", "/%2e%2e%5cevil.com", "/%252e%252e%255cevil.com"];
 const go = async (handler: (r: Request) => Promise<Response>, query: string) => {
   const res = await handler(new Request(`${ORIGIN}${query}`));
   expect(res.status).toBeGreaterThanOrEqual(300);
@@ -38,6 +39,19 @@ describe("safeNextPath", () => {
     "javascript:alert(1)", "evil.com", "/%2F%2Fevil.com", "%2F%2Fevil.com", "/%5Cevil.com", "/\tevil", "/\n/evil.com", "/%0d%0a//evil.com", "", null, undefined,
   ])("refuses %j and falls back to /dashboard", (next) => expect(safeNextPath(next as string)).toBe("/dashboard"));
 
+  // Dot segments collapse during URL resolution into `//evil.com`, which `new URL(x, origin)` treats as another host.
+  it.each(DOT_BYPASSES)("refuses the dot-segment bypass %s", (next) => {
+    expect(safeNextPath(next)).toBe("/dashboard");
+    const to = sameOriginUrl(ORIGIN, safeNextPath(next));
+    expect(to.origin).toBe(ORIGIN);
+  });
+  it("sameOriginUrl can't leave the origin whatever it is given", () => {
+    for (const p of ["//evil.com", "/\\evil.com", "/.//evil.com", "https://evil.com/x", "///evil.com"]) expect(sameOriginUrl(ORIGIN, p).origin).toBe(ORIGIN);
+  });
+  it("keeps harmless paths that merely contain dots or encoded characters", () => {
+    expect(safeNextPath("/settings/./password")).toBe("/settings/password");
+    expect(safeNextPath("/a/../billing?x=a%20b")).toBe("/billing?x=a%20b");
+  });
   it("uses the fallback it is given", () => expect(safeNextPath("//x", "/settings/password")).toBe("/settings/password"));
 });
 
@@ -51,7 +65,7 @@ describe("/auth/callback", () => {
   it("follows a same-origin next (the password-reset link)", async () => {
     expect((await go(callback, "/auth/callback?code=abc&next=/settings/password")).pathname).toBe("/settings/password");
   });
-  it.each(["//evil.com", "/\\evil.com", "https://evil.com", "/%2F%2Fevil.com"])("never leaves the site for next=%s", async (next) => {
+  it.each(["//evil.com", "/\\evil.com", "https://evil.com", "/%2F%2Fevil.com", ...DOT_BYPASSES])("never leaves the site for next=%s", async (next) => {
     const to = await go(callback, `/auth/callback?code=abc&next=${encodeURIComponent(next)}`);
     expect(to.origin).toBe(ORIGIN);
     expect(to.pathname).toBe("/dashboard");

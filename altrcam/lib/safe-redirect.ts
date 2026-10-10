@@ -13,14 +13,36 @@ export function safeNextPath(next: string | null | undefined, fallback = "/dashb
     // eslint-disable-next-line no-control-regex
     if (/[\u0000-\u001f\u007f\\]/.test(candidate)) return fallback;
   }
-  // Final check: resolved against a dummy origin it must stay on that origin.
+  // Resolving collapses dot segments, so `/.//evil.com` or `/%2e%2e//evil.com` become `//evil.com`: judge the RESOLVED path.
+  // Decode repeatedly too, so `%252e` style double encoding is judged on what a later decode would produce.
   try {
     const u = new URL(next, "http://same.invalid");
     if (u.origin !== "http://same.invalid") return fallback;
-    return u.pathname + u.search + u.hash;
+    const resolved = u.pathname + u.search + u.hash;
+    let cur = resolved;
+    for (let i = 0; i < 4; i++) {
+      if (!cur.startsWith("/") || cur.startsWith("//") || cur.startsWith("/\\")) return fallback;
+      // eslint-disable-next-line no-control-regex
+      if (/[\u0000-\u001f\u007f\\]/.test(cur)) return fallback;
+      // What a later decode-and-resolve step (a proxy, a client) would see must not turn into a protocol-relative URL either.
+      try { const p = new URL(cur, "http://same.invalid").pathname; if (p.startsWith("//") || p.startsWith("/\\")) return fallback; } catch { return fallback; }
+      let nextCur: string;
+      try { nextCur = decodeURIComponent(cur); } catch { return fallback; }
+      if (nextCur === cur) break;
+      cur = nextCur;
+    }
+    return resolved;
   } catch {
     return fallback;
   }
+}
+
+/** Builds the redirect target by assigning only path, query and hash onto our own origin, so it can never leave it. */
+export function sameOriginUrl(origin: string, path: string): URL {
+  const target = new URL(origin);
+  const rel = new URL(path, "http://same.invalid");
+  target.pathname = rel.pathname; target.search = rel.search; target.hash = rel.hash;
+  return target;
 }
 
 /** Short codes for the sign-in page; the page turns them into a friendly sentence. Nothing from the URL is echoed raw. */

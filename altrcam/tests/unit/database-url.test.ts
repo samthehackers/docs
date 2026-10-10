@@ -5,7 +5,7 @@
  */
 import { describe, expect, it } from "vitest";
 import postgres from "postgres";
-import { cleanDatabaseUrl, databaseUrl, migrationDatabaseUrl, postgresOptions, sslFor } from "@/lib/database-url";
+import { cleanDatabaseUrl, databaseUrl, isPoolerUrl, migrationDatabaseUrl, postgresOptions, sslFor } from "@/lib/database-url";
 
 const POOLER = "postgres://postgres.abcdefghijklmnopqrst:fake%2Fp%40ss@aws-0-eu-central-1.pooler.supabase.com:6543/postgres?sslmode=require&supa=base-pooler.x";
 const PRISMA = "postgres://postgres.abcdefghijklmnopqrst:fakepass@aws-0-eu-central-1.pooler.supabase.com:6543/postgres?sslmode=require&supa=base-pooler.x&pgbouncer=true&connection_limit=1&connect_timeout=15";
@@ -59,6 +59,16 @@ describe("cleaning integration URLs for postgres.js", () => {
     const o = parsed(cleanDatabaseUrl(PRISMA).url);
     expect(o.connect_timeout).toBe(15);
     expect(Object.keys(o.connection)).toEqual(["application_name"]);
+  });
+});
+
+describe("pooler detection (db.ts uses a smaller pool behind one)", () => {
+  it("is true for port 6543 or a pooler host, false for direct and local URLs", () => {
+    expect(isPoolerUrl(POOLER)).toBe(true);
+    expect(isPoolerUrl("postgres://u:p@db.abc.supabase.co:6543/postgres")).toBe(true);
+    expect(isPoolerUrl("postgres://u:p@aws-0-x.pooler.supabase.com:5432/postgres")).toBe(true);
+    expect(isPoolerUrl("postgres://u:p@db.abc.supabase.co:5432/postgres")).toBe(false);
+    expect(isPoolerUrl("postgres://postgres:postgres@127.0.0.1:54322/postgres")).toBe(false);
   });
 });
 

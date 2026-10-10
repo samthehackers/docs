@@ -236,6 +236,18 @@ test("auth links never redirect off-site, and a bad link explains itself", async
     expect(to.host).toMatch(/^localhost(:\d+)?$/);
     expect(to.pathname).toBe("/sign-in");
   }
+  // The SUCCESS path too: a valid token_hash (admin-generated magic link) signs in and then follows `next`, which must stay
+  // on this origin even for dot-segment and (double-)encoded variants of //evil.example.
+  const bypasses = ["//evil.example", "/.//evil.example", "/a/..//evil.example", "/..//evil.example", "/%2e%2e//evil.example", "/%252e%252e//evil.example", "/.%2f/evil.example", "https://evil.example"];
+  for (const next of bypasses) {
+    const link = (await authAdmin("generate_link", { method: "POST", body: JSON.stringify({ type: "magiclink", email: A.email }) })) as { hashed_token: string };
+    const res = await request.get(`/auth/confirm?token_hash=${link.hashed_token}&type=magiclink&next=${encodeURIComponent(next)}`, { maxRedirects: 0 });
+    expect(res.status(), next).toBeGreaterThanOrEqual(300);
+    const to = new URL(res.headers()["location"]);
+    expect(to.origin, next).toBe(new URL(res.url()).origin); // the redirect stays on the app's own origin
+    expect(to.host, next).toMatch(/^localhost(:\d+)?$/);
+    expect(to.pathname, next).toBe("/dashboard");
+  }
   await page.goto("/auth/callback?error=access_denied&error_code=otp_expired&error_description=Email+link+is+invalid+or+has+expired");
   await expect(page).toHaveURL(/\/sign-in\?error=link_expired$/);
   await expect(page.locator("main").getByRole("alert")).toContainText("That link has expired.");

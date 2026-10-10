@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import type { EmailOtpType } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
 import { supabaseConfigured } from "@/lib/config";
-import { authErrorCode, safeNextPath } from "@/lib/safe-redirect";
+import { authErrorCode, safeNextPath, sameOriginUrl } from "@/lib/safe-redirect";
 
 const TYPES: EmailOtpType[] = ["signup", "invite", "magiclink", "recovery", "email_change", "email"];
 
@@ -30,5 +30,5 @@ export async function GET(request: Request) {
     return fail(authErrorCode(verifyError.code ?? "", verifyError.message));
   }
   const fallback = type === "recovery" ? "/settings/password" : "/dashboard";
-  return NextResponse.redirect(new URL(safeNextPath(url.searchParams.get("next"), fallback), url.origin));
+  return NextResponse.redirect(sameOriginUrl(url.origin, safeNextPath(url.searchParams.get("next"), fallback)));
 }

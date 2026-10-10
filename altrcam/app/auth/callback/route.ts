@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { supabaseConfigured } from "@/lib/config";
-import { authErrorCode, safeNextPath } from "@/lib/safe-redirect";
+import { authErrorCode, safeNextPath, sameOriginUrl } from "@/lib/safe-redirect";
 
 /**
  * Landing point for Supabase links that carry a PKCE `code`: email confirmation, password recovery and Google OAuth
@@ -24,5 +24,5 @@ export async function GET(request: Request) {
     console.error("[auth/callback] code exchange failed:", exchangeError.code ?? exchangeError.message);
     return fail(authErrorCode(exchangeError.code ?? "", exchangeError.message));
   }
-  return NextResponse.redirect(new URL(safeNextPath(url.searchParams.get("next")), url.origin));
+  return NextResponse.redirect(sameOriginUrl(url.origin, safeNextPath(url.searchParams.get("next"))));
 }

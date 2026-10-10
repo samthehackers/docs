@@ -20,6 +20,7 @@ const cache = new Map<string, Ratelimit>();
  */
 const memory = new Map<string, number[]>();
 let warned = false;
+let lastSweep = 0;
 function memoryLimit(name: LimitName, key: string, now = Date.now()) {
   if (!warned && process.env.NODE_ENV === "production") {
     warned = true;
@@ -31,7 +32,11 @@ function memoryLimit(name: LimitName, key: string, now = Date.now()) {
   if (hits.length >= l.n) { memory.set(id, hits); throw new HttpError(429, "Too many requests, slow down"); }
   hits.push(now);
   memory.set(id, hits);
-  if (memory.size > 10_000) for (const [k, v] of memory) if (!v.some((t) => now - t < limits[k.split(":")[0] as LimitName].ms)) memory.delete(k);
+  // Drop idle keys, but sweep at most once a minute so a busy instance doesn't walk the whole map on every call.
+  if (memory.size > 10_000 && now - lastSweep >= 60_000) {
+    lastSweep = now;
+    for (const [k, v] of memory) if (!v.some((t) => now - t < limits[k.split(":")[0] as LimitName].ms)) memory.delete(k);
+  }
 }
 
 /** Throws 429 when exceeded. Uses Upstash when configured, else the in-memory fallback above. */
@@ -53,4 +58,6 @@ export async function rateLimit(name: LimitName, key: string) {
 }
 
 /** Test hook: forget the in-memory counters. */
-export const resetMemoryLimits = () => memory.clear();
+export const resetMemoryLimits = () => { memory.clear(); lastSweep = 0; };
+/** Test hook: how many keys are tracked. */
+export const memoryLimitKeys = () => memory.size;

@@ -68,6 +68,12 @@ describe("/auth/callback", () => {
     expect(to.pathname).toBe("/sign-in");
     expect(authErrorMessage(to.searchParams.get("error")!)).toBeTruthy();
   });
+  it("a link opened in another browser (no PKCE verifier) says so instead of 'invalid'", async () => {
+    h.exchange.mockResolvedValue({ error: { code: "pkce_code_verifier_not_found", message: "PKCE code verifier not found in storage." } });
+    const to = await go(callback, "/auth/callback?code=abc");
+    expect(to.searchParams.get("error")).toBe("other_browser");
+    expect(authErrorMessage("other_browser")).toMatch(/it is confirmed: sign in/);
+  });
   it("no code at all is an invalid link", async () => {
     expect((await go(callback, "/auth/callback")).searchParams.get("error")).toBe("link_invalid");
   });

@@ -11,6 +11,7 @@
     "test": "vitest run",
     "test:integration": "vitest run -c vitest.integration.config.ts",
     "test:e2e": "playwright test",
+    "test:e2e:local": "bash scripts/e2e-local.sh",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx --env-file=.env.local scripts/migrate.ts",
     "db:seed": "tsx --env-file=.env.local scripts/seed.ts",

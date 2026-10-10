@@ -24,10 +24,13 @@ export function safeNextPath(next: string | null | undefined, fallback = "/dashb
 }
 
 /** Short codes for the sign-in page; the page turns them into a friendly sentence. Nothing from the URL is echoed raw. */
-export type AuthErrorCode = "link_expired" | "link_invalid" | "access_denied" | "auth_failed";
+export type AuthErrorCode = "link_expired" | "link_invalid" | "access_denied" | "auth_failed" | "other_browser";
 
 export function authErrorCode(error: string | null, description: string | null): AuthErrorCode {
   const text = `${error ?? ""} ${description ?? ""}`.toLowerCase();
+  // PKCE links only sign you in from the browser that asked for them (it holds the code verifier). Supabase has already
+  // verified the emailed token by the time it redirects here, so a confirmation link did confirm the address.
+  if (/code.?verifier/.test(text)) return "other_browser";
   if (/expired/.test(text)) return "link_expired";
   if (/access_denied|denied|cancel/.test(text)) return "access_denied";
   if (/invalid|otp|token|code/.test(text)) return "link_invalid";
@@ -39,6 +42,7 @@ export const AUTH_ERROR_MESSAGES: Record<AuthErrorCode, string> = {
   link_invalid: "That link is invalid or has already been used. Request a new one and open it in this browser.",
   access_denied: "Sign-in was cancelled.",
   auth_failed: "We couldn't sign you in with that link. Please try again.",
+  other_browser: "That link can only sign you in from the browser where you asked for it. If you were confirming your email, it is confirmed: sign in below. For a password reset, request a new link from this browser.",
 };
 
 export function authErrorMessage(code: string | string[] | undefined): string | null {

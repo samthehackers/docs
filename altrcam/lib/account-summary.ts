@@ -72,6 +72,10 @@ const END_LABELS: Record<string, string> = {
   user: "Ended by you",
   stale: "Stopped checking in (connection lost or tab closed)",
   superseded: "Replaced by a newer session",
+  failed_connect: "Never connected (no credits used)",
+  connection_failed: "The connection failed",
+  camera_lost: "Your camera stopped",
+  reconnect: "Replaced when you pressed Reconnect",
 };
 /**
  * `lastSeen` is the last heartbeat. An unclosed session that has been silent longer than the stale cut-off is not running any more;

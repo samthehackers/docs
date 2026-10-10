@@ -73,6 +73,21 @@ export function expectedPrice(product: ProductId): { amountMinor: number; curren
 export const LOW_CREDIT_RATIO = 0.1;
 export const HEARTBEAT_SECONDS = 10;
 export const STALE_AFTER_SECONDS = 30;
+/**
+ * A session must show its first transformed frame (POST /live) within this long of starting. After that it is closed as
+ * `failed_connect` with nothing billed (by the heartbeat, the end call, the next start or the stale sweep), /live is
+ * refused, and the fal proxy stops minting connection tokens for it.
+ */
+export const CONNECT_GRACE_SECONDS = 30;
+/**
+ * Never-connected cooldown. "Live" is reported by the browser, so a tampered client could stream without reporting it and
+ * pay nothing. Each such attempt only gets connection tokens for CONNECT_GRACE_SECONDS, and Go live is refused (429)
+ * while more than NEVER_LIVE_LIMIT of the user's sessions started in the last NEVER_LIVE_WINDOW_SECONDS ended without
+ * ever going live. 5 in 10 minutes still allows two failed Go lives with their automatic retry, plus one more, before
+ * the pause; it lifts by itself as the oldest of those attempts leaves the window.
+ */
+export const NEVER_LIVE_LIMIT = 5;
+export const NEVER_LIVE_WINDOW_SECONDS = 600;
 
 /** Referral program. The referrer is rewarded once, when the friend first pays for Pro or Lifetime. */
 export const REFERRAL = {

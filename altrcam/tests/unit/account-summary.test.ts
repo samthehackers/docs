@@ -77,6 +77,8 @@ describe("sessionEndLabel", () => {
     expect(sessionEndLabel("user")).toMatch(/you/i);
     expect(sessionEndLabel("stale")).toMatch(/connection|checking in/i);
     expect(sessionEndLabel("superseded")).toMatch(/newer session/i);
+    expect(sessionEndLabel("failed_connect")).toMatch(/never connected.*no credits/i);
+    for (const r of ["connection_failed", "camera_lost", "reconnect"]) expect(sessionEndLabel(r)).not.toBe("Ended");
   });
   it("says a session without an end is still open, and tolerates unknown reasons", () => {
     expect(sessionEndLabel(null)).toMatch(/still open/i);

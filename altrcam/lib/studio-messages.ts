@@ -27,6 +27,7 @@ export const MESSAGES = {
   outOfCredits: "You're out of credits.",
   sessionLimit: "Session limit reached for your plan.",
   sessionEnded: "Session ended.",
+  neverConnected: "The transformed video didn't start in time, so the session was closed. Nothing was charged.",
   unreadableStart: "The server's reply to starting a session was unreadable. Try again.",
 } as const;
 
@@ -41,15 +42,17 @@ export interface Notice {
 
 // ---------- starting a session ----------
 
-export type StartResult = { network: true } | { status: number; error?: string };
+export type StartResult = { network: true } | { status: number; error?: string; code?: string };
 export interface StartProblem { message: string; retry: boolean; outOfCredits: boolean }
 
 /** What to say when POST /api/studio/session/start fails. `error` is the server's own message, used where it is specific and honest. */
 export function describeStartFailure(r: StartResult): StartProblem {
   if ("network" in r) return { message: "Couldn't reach AltrCam. Check your internet connection, then try again.", retry: true, outOfCredits: false };
-  const { status, error } = r;
+  const { status, error, code } = r;
   if (status === 401) return { message: "You've been signed out. Reload the page and sign in again.", retry: false, outOfCredits: false };
   if (status === 402) return { message: MESSAGES.outOfCredits, retry: false, outOfCredits: true };
+  // The never-connected pause: the server says how long, and why.
+  if (status === 429 && code === "connect_cooldown") return { message: error ?? "Your last few attempts didn't connect, so going live is paused for a few minutes.", retry: true, outOfCredits: false };
   if (status === 429) return { message: "Too many sessions started in a short time. Wait a minute, then try again.", retry: true, outOfCredits: false };
   if (status === 503) return { message: error ?? "Live transformation isn't available right now. Try again later.", retry: true, outOfCredits: false };
   if (status >= 500) return { message: `Something went wrong on our side starting the session (HTTP ${status}). Try again in a moment.`, retry: true, outOfCredits: false };

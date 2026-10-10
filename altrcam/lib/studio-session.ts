@@ -168,7 +168,10 @@ export function createStudioSession(d: SessionDeps): StudioSession {
     const r = await d.fetch("/api/studio/session/live", { method: "POST", headers: JSON_HEADERS, body: JSON.stringify({ sessionId: id }) }).catch(() => null);
     if (id !== sid || !r) return;
     if (r.ok) { liveSent = id; return; }
-    if (r.status === 404 || r.status === 409) await stop({ notice: { tone: "info", text: MESSAGES.sessionEnded } });
+    if (r.status === 404 || r.status === 409) {
+      const j = (await r.json().catch(() => null)) as { reason?: string } | null;
+      if (id === sid) await stop({ notice: { tone: "info", text: j?.reason === "failed_connect" ? MESSAGES.neverConnected : MESSAGES.sessionEnded } });
+    }
   }
 
   function firstFrame() {
@@ -191,7 +194,7 @@ export function createStudioSession(d: SessionDeps): StudioSession {
     const j = (await r.json().catch(() => null)) as { remaining: number; secondsLeftInSession: number; continue: boolean; reason?: string } | null;
     if (!j || id !== sid) return;
     set({ remaining: j.remaining, sessionLeft: j.secondsLeftInSession });
-    if (!j.continue) await stop({ notice: { tone: "info", text: j.reason === "credits" ? MESSAGES.outOfCredits : MESSAGES.sessionLimit } });
+    if (!j.continue) await stop({ notice: { tone: "info", text: j.reason === "credits" ? MESSAGES.outOfCredits : j.reason === "failed_connect" ? MESSAGES.neverConnected : MESSAGES.sessionLimit } });
   }
 
   /** (Re)open the connection for session `id`, closing any earlier one. False if it failed on the spot (already handled). */
@@ -283,10 +286,10 @@ export function createStudioSession(d: SessionDeps): StudioSession {
         }
         return;
       }
-      const body = (await res.json().catch(() => null)) as { error?: string; sessionId?: string; remaining?: number; maxSeconds?: number } | null;
+      const body = (await res.json().catch(() => null)) as { error?: string; code?: string; sessionId?: string; remaining?: number; maxSeconds?: number } | null;
       if (!res.ok) {
         if (cancelled()) return;
-        const p = describeStartFailure({ status: res.status, error: body?.error });
+        const p = describeStartFailure({ status: res.status, error: body?.error, code: body?.code });
         set({ state: "idle", ...(p.outOfCredits ? { remaining: 0 } : {}), notice: { tone: "error", text: p.message, ...(p.retry ? { retryLabel: "Try again" } : {}) } });
         return;
       }

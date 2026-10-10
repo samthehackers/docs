@@ -9,6 +9,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { browserNetwork, createStudioSession, type SessionDeps, type SessionView, type StartInputs } from "@/lib/studio-session";
 import type { ConnectOptions, ConnState, LucyConnection, LucyFailure } from "@/lib/fal/signaling";
+import { MESSAGES } from "@/lib/studio-messages";
 
 const json = (status: number, body: unknown) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
 interface Body { sessionId?: string; reason?: string; stats?: unknown; settings?: unknown }
@@ -198,6 +199,28 @@ describe("going live is the first transformed frame (fair billing)", () => {
     await tick(0);
     expect(t.s.view()).toMatchObject({ state: "idle", notice: { text: "Session ended." } });
     expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("a server that closed a never-live session (failed_connect) is explained: nothing was charged", async () => {
+    const viaBeat = setup({ routes: { [BEAT]: () => json(200, { remaining: 300, continue: false, reason: "failed_connect", secondsLeftInSession: 120 }) } });
+    await viaBeat.s.start(INPUTS);
+    await tick(10_000);
+    expect(viaBeat.s.view()).toMatchObject({ state: "idle", notice: { text: MESSAGES.neverConnected } });
+    expect(MESSAGES.neverConnected).toMatch(/Nothing was charged/);
+
+    const viaLive = setup({ routes: { [LIVE]: () => json(409, { error: "too late", code: "failed_connect", reason: "failed_connect" }) } });
+    await viaLive.s.start(INPUTS);
+    viaLive.s.firstFrame();
+    await tick(0);
+    expect(viaLive.s.view().notice?.text).toBe(MESSAGES.neverConnected);
+  });
+
+  it("the never-connected pause on Go live shows the server's own explanation, with Try again", async () => {
+    const text = "Your last few attempts didn't connect, so going live is paused for about 9 minutes. Nothing was charged for them.";
+    const t = setup({ routes: { [START]: () => json(429, { error: text, code: "connect_cooldown", retryAfterSeconds: 540 }) } });
+    await t.s.start(INPUTS);
+    expect(t.s.view()).toMatchObject({ state: "idle", notice: { text, retryLabel: "Try again" } });
+    expect(t.connect).not.toHaveBeenCalled();
   });
 
   it("a new session starts with no live time", async () => {

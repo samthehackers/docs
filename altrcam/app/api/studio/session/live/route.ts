@@ -17,5 +17,6 @@ export const POST = handle(async (req: Request) => {
   const r = await markLive(sessionId, userId);
   if (r.status === "not_found") throw new HttpError(404, "Session not found");
   if (r.status === "ended") throw new HttpError(409, "This session has already ended", { code: "ended", reason: r.reason });
+  if (r.status === "too_late") throw new HttpError(409, "The video took too long to start, so this session was closed. Nothing was charged.", { code: "failed_connect", reason: "failed_connect" });
   return NextResponse.json({ liveAt: r.liveAt.toISOString(), alreadyLive: r.already });
 });

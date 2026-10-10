@@ -7,7 +7,7 @@
 import Link from "next/link";
 import { fmtSessionLimit } from "@/lib/account-summary";
 import { CREDITS_RULE } from "@/lib/availability";
-import { HEARTBEAT_SECONDS, STALE_AFTER_SECONDS, type Plan, type PlanConfig } from "@/lib/plans";
+import { HEARTBEAT_SECONDS, NEVER_LIVE_LIMIT, NEVER_LIVE_WINDOW_SECONDS, STALE_AFTER_SECONDS, type Plan, type PlanConfig } from "@/lib/plans";
 import { fmtNum } from "@/lib/utils";
 
 export interface TroubleshootingItem { id: string; title: string; body: React.ReactNode }
@@ -56,6 +56,7 @@ export function troubleshootingItems(plans: Record<Plan, PlanConfig>): Troublesh
             <li>While you are live, the Studio shows FPS, round-trip time, jitter and packet loss. High round-trip time or packet loss points to the network.</li>
             <li>Apply changes restarts the connection so a new prompt or reference image takes effect, so a short interruption after pressing it is expected.</li>
           </Ul>
+          <p className="mt-2">After several attempts in a row that never show transformed video (more than {NEVER_LIVE_LIMIT} in {NEVER_LIVE_WINDOW_SECONDS / 60} minutes), Go live is paused for a few minutes and the Studio says how long. Those attempts cost nothing; the pause is there to stop misuse, and it lifts by itself.</p>
           <p className="mt-2">If the Studio says live transformation isn&apos;t available because the service is not configured, the live service is not switched on for this deployment and there is nothing to fix on your side.</p>
           <p className="mt-2">If it still fails on a good connection with no VPN, the cause may be on our side. Send a ticket with the status message you see and what you tried.</p>
         </>

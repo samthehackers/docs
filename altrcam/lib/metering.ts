@@ -8,6 +8,7 @@ import { getPlan } from "@/lib/plan-config";
 import { notify, userEmailIfEnabled } from "@/lib/notifications";
 import { sendEmail } from "@/lib/email";
 import { sql } from "drizzle-orm";
+import { appUrl } from "@/lib/app-url";
 
 export interface Stats { fps?: number; rttMs?: number }
 export interface MeterOut { remaining: number; continue: boolean; reason?: string; secondsLeftInSession: number; secondsBilled: number }
@@ -60,7 +61,7 @@ async function maybeLowCreditAlert(userId: string, remaining: number) {
   if (!claimed.length) return;
   await notify(d, userId, "low_credits", "Running low on credits", `${remaining} credits left.`);
   const to = await userEmailIfEnabled(d, userId);
-  if (to) await sendEmail(to, "You're low on AltrCam credits", `<p>You have <b>${remaining}</b> credits left. <a href="${process.env.NEXT_PUBLIC_APP_URL}/billing">Top up</a> to keep going live.</p>`);
+  if (to) await sendEmail(to, "You're low on AltrCam credits", `<p>You have <b>${remaining}</b> credits left. <a href="${appUrl()}/billing">Top up</a> to keep going live.</p>`);
 }
 
 /** Close sessions whose heartbeat stopped; billed only up to the last heartbeat. */

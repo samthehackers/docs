@@ -20,6 +20,11 @@ export default defineConfig({
     url: `http://localhost:${port}/api/health`,
     timeout: 300_000,
     reuseExistingServer: !process.env.CI,
-    env: { NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: "", CLERK_SECRET_KEY: "" },
+    // Blank every integration, including the names the Vercel Supabase integration sets, so this really runs with none.
+    env: {
+      NEXT_PUBLIC_SUPABASE_URL: "", NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: "", NEXT_PUBLIC_SUPABASE_ANON_KEY: "",
+      SUPABASE_URL: "", SUPABASE_SERVICE_ROLE_KEY: "", SUPABASE_SECRET_KEY: "",
+      DATABASE_URL: "", POSTGRES_URL: "", POSTGRES_PRISMA_URL: "", POSTGRES_URL_NON_POOLING: "",
+    },
   },
 });

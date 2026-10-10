@@ -9,6 +9,8 @@ import { ledgerBalance } from "@/lib/credits";
 import { presets, transformations } from "@/db/schema";
 import { getPlans } from "@/lib/plan-config";
 import { BUILTIN_PRESETS, type PresetKind } from "@/lib/studio-presets";
+import { capabilities } from "@/lib/config";
+import { STUDIO_NOTICES } from "@/lib/studio-messages";
 
 export const metadata = { title: "Studio" };
 export const dynamic = "force-dynamic";
@@ -52,6 +54,7 @@ export default async function StudioPage({ searchParams }: { searchParams: Promi
   return (
     <div className="space-y-4">
       <h1 className="text-3xl font-bold">Studio</h1>
+      {!capabilities().liveTransformation && <p role="status" data-testid="studio-not-configured" className="rounded-lg border border-accent/50 bg-accent/10 p-3 text-sm">{STUDIO_NOTICES.notConfigured}</p>}
       <Studio
         resolution={plan.maxResolution}
         clipRecording={plan.clipRecording}

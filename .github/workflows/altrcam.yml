@@ -10,11 +10,6 @@ defaults:
   run:
     working-directory: altrcam
 
-env:
-  # Dummy values so `next build` passes env validation; real secrets are only used by e2e.
-  NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${{ secrets.CLERK_TEST_PUBLISHABLE_KEY || 'pk_test_Y2xlcmsuZXhhbXBsZS5jb20k' }}
-  CLERK_SECRET_KEY: ${{ secrets.CLERK_TEST_SECRET_KEY || 'sk_test_dummy' }}
-
 jobs:
   check:
     runs-on: ubuntu-latest
@@ -31,9 +26,6 @@ jobs:
       - run: npx playwright install --with-deps chromium
       - name: Public site checks (no credentials)
         run: npm run test:public
-        env:
-          NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ""
-          CLERK_SECRET_KEY: ""
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -44,47 +36,15 @@ jobs:
   e2e:
     needs: check
     runs-on: ubuntu-latest
-    # Runs only when Clerk test-mode credentials are configured as repo secrets.
+    # Real Supabase Auth + Postgres + Mailpit from the Supabase CLI (Docker), never a hosted project. Slow, so opt-in.
     if: ${{ vars.E2E_ENABLED == 'true' }}
-    services:
-      postgres:
-        image: postgres:16
-        env: { POSTGRES_PASSWORD: postgres, POSTGRES_DB: altrcam }
-        ports: ["5432:5432"]
-        options: >-
-          --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 10
-    env:
-      DATABASE_URL: postgres://postgres:postgres@localhost:5432/altrcam
-      CLERK_WEBHOOK_SECRET: whsec_dGVzdA==
-      SUPABASE_URL: https://example.supabase.co
-      SUPABASE_SERVICE_ROLE_KEY: x
-      FAL_KEY: x
-      PAYSTACK_SECRET_KEY: sk_test_e2e
-      PAYSTACK_PUBLIC_KEY: pk_test_e2e
-      PAYSTACK_PLAN_PRO_MONTHLY: PLN_m
-      PAYSTACK_PLAN_PRO_YEARLY: PLN_y
-      NOWPAYMENTS_API_KEY: x
-      NOWPAYMENTS_IPN_SECRET: x
-      RESEND_API_KEY: x
-      UPSTASH_REDIS_REST_URL: https://example.upstash.io
-      UPSTASH_REDIS_REST_TOKEN: x
-      CRON_SECRET: 0123456789abcdef0123
-      NEXT_PUBLIC_APP_URL: http://localhost:3000
-      PRICE_CURRENCY: NGN
-      PRICE_PRO_MONTHLY: "1500000"
-      PRICE_PRO_YEARLY: "15000000"
-      PRICE_LIFETIME: "45000000"
-      PRICE_TOPUP_1K: "300000"
-      PRICE_TOPUP_5K: "1200000"
-      PRICE_TOPUP_15K: "3000000"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with: { node-version: 22, cache: npm, cache-dependency-path: altrcam/package-lock.json }
       - run: npm ci
       - run: npx playwright install --with-deps chromium
-      - run: npx tsx scripts/migrate.ts
-      - run: npm run test:e2e
+      - run: npm run test:e2e:local
 
   # Runs the app's own code against a REAL PostgreSQL through the production driver (the unit suites use an in-memory
   # database whose driver differs). See altrcam/tests/integration/postgres.test.ts.

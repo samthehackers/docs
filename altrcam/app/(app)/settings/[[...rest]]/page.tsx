@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { Card } from "@/components/ui/card";
 import { DeleteAccount, NotifyToggle } from "@/components/settings-forms";
 import { requireAppUser } from "@/lib/session-user";
@@ -16,6 +17,7 @@ export default async function Settings() {
           <div><dt className="text-muted-foreground">Email</dt><dd className="font-medium">{user.email}</dd></div>
           <div><dt className="text-muted-foreground">Name</dt><dd className="font-medium">{user.name || "Not set"}</dd></div>
         </dl>
+        <Link href="/settings/password" className="mt-4 inline-block text-sm underline underline-offset-4">Change password</Link>
       </Card>
       <Card className="border-destructive/40"><h2 className="mb-3 font-semibold text-destructive">Delete account</h2><DeleteAccount /></Card>
     </div>

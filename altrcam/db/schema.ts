@@ -7,7 +7,7 @@ export const bucketEnum = pgEnum("credit_bucket", ["monthly", "purchased"]);
 export const paymentKind = pgEnum("payment_kind", ["subscription", "lifetime", "topup"]);
 
 export const users = pgTable("users", {
-  id: text("id").primaryKey(), // Clerk user id
+  id: text("id").primaryKey(), // Supabase Auth user id (auth.users.id, a uuid as text)
   email: text("email").notNull(),
   name: text("name").notNull().default(""),
   avatarUrl: text("avatar_url"),

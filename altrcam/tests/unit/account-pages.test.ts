@@ -45,7 +45,7 @@ beforeEach(async () => {
   h.userId = "A";
   await d.execute(sql`truncate users, subscriptions, payments, webhook_events, credit_ledger, audit_log, notifications, studio_sessions, transformations, presets, support_tickets, plan_config restart identity cascade`);
   await d.insert(users).values([
-    { id: "A", email: "ada@example.com", name: "Ada Lovelace", avatarUrl: "https://img.clerk.com/ada.png", createdAt: new Date("2026-01-15T10:00:00Z") },
+    { id: "A", email: "ada@example.com", name: "Ada Lovelace", avatarUrl: "https://lh3.googleusercontent.com/ada.png", createdAt: new Date("2026-01-15T10:00:00Z") },
     { id: "B", email: "bob@example.com", name: "Bob Other" },
   ]);
 });
@@ -67,7 +67,7 @@ describe("/dashboard", () => {
     expect(t).toContain("Ada Lovelace");
     expect(t).toContain("ada@example.com");
     expect(t).toContain("Member since January 2026");
-    expect(out).toContain('src="https://img.clerk.com/ada.png"');
+    expect(out).toContain('src="https://lh3.googleusercontent.com/ada.png"');
     expect(out).toMatch(/href="\/settings"[^>]*>Manage profile/);
   });
   it("keeps one prominent Open Studio action", async () => {

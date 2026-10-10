@@ -12,12 +12,7 @@ import * as React from "react";
 
 const h = vi.hoisted(() => ({ db: null as unknown, me: null as string | null, admins: new Set<string>() }));
 
-vi.mock("@clerk/nextjs/server", () => ({
-  auth: async () => ({ userId: h.me }),
-  currentUser: async () => null,
-  clerkClient: async () => ({ users: { getUser: async (id: string) => ({ publicMetadata: { role: h.admins.has(id) ? "admin" : "user" } }) } }),
-  clerkMiddleware: () => () => {}, createRouteMatcher: () => () => false,
-}));
+vi.mock("@/lib/supabase/server", async () => (await import("./supabase-auth-mock")).fakeServerModule(h));
 vi.mock("@/lib/db", async (orig) => ({ ...(await orig<typeof import("@/lib/db")>()), db: () => h.db }));
 
 import { testDb } from "./helpers";

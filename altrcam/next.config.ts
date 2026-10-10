@@ -1,7 +1,7 @@
 import type { NextConfig } from "next";
 import { buildCsp } from "./lib/csp";
 
-const csp = buildCsp({ clerkPublishableKey: process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY });
+const csp = buildCsp({ supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL });
 
 const config: NextConfig = {
   outputFileTracingRoot: __dirname,

@@ -1,6 +1,7 @@
 import type { MetadataRoute } from "next";
+import { appUrl } from "@/lib/app-url";
 
-const base = process.env.NEXT_PUBLIC_APP_URL ?? "https://altrcam.com";
+const base = appUrl();
 
 export default function robots(): MetadataRoute.Robots {
   return {

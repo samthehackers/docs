@@ -1,18 +1,14 @@
 /**
  * Account isolation + authorization: the real route handlers, run against a real in-memory Postgres,
- * with Clerk's auth mocked to act as a chosen user. The point is that user A can never read, change,
+ * with the Supabase Auth seam (getUser) mocked to act as a chosen user. The point is that user A can never read, change,
  * delete, bill or cancel anything that belongs to user B, and that admin routes are admin-only.
  */
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { eq, sql } from "drizzle-orm";
 
-const h = vi.hoisted(() => ({ db: null as unknown, me: null as string | null, admins: new Set<string>() }));
+const h = vi.hoisted(() => ({ db: null as unknown, me: null as string | null, admins: new Set<string>(), unconfirmed: new Set<string>() }));
 
-vi.mock("@clerk/nextjs/server", () => ({
-  auth: async () => ({ userId: h.me }),
-  clerkClient: async () => ({ users: { getUser: async (id: string) => ({ publicMetadata: { role: h.admins.has(id) ? "admin" : "user" } }), deleteUser: async () => {} } }),
-  clerkMiddleware: () => () => {}, createRouteMatcher: () => () => false, currentUser: async () => null,
-}));
+vi.mock("@/lib/supabase/server", async () => (await import("./supabase-auth-mock")).fakeServerModule(h));
 vi.mock("@/lib/db", async (orig) => ({ ...(await orig<typeof import("@/lib/db")>()), db: () => h.db }));
 vi.mock("@/lib/storage", async (orig) => ({
   ...(await orig<typeof import("@/lib/storage")>()), // keep the real assertOwnPath
@@ -222,10 +218,19 @@ describe("admin routes are admin-only, enforced on the server", () => {
     expect(log.map((l) => l.action).sort()).toEqual(["credits.grant", "credits.revoke", "plan.change"]);
     expect(log.every((l) => l.actorId === "ADMIN")).toBe(true);
   });
-  it("the role comes from Clerk metadata, not from anything the client sends", async () => {
+  it("the role comes from Supabase app_metadata (server-verified), not from anything the client sends", async () => {
     as("A");
     const r = await call(adminCredits.POST, json({ userId: "A", amount: 5, reason: "x", role: "admin", isAdmin: true }));
     expect(r.status).toBe(403);
+  });
+  it("an account whose email is not confirmed gets 403 from the APIs, not access", async () => {
+    as("A"); h.unconfirmed = new Set(["A"]);
+    try {
+      const r = await call(accountRoute.PATCH, json({ notifyEmail: false }, "PATCH"));
+      expect(r.status).toBe(403);
+      expect(await r.json()).toMatchObject({ code: "email_unconfirmed" });
+      expect((await d.select().from(users).where(eq(users.id, "A")))[0].notifyEmail).toBe(true);
+    } finally { h.unconfirmed = new Set(); }
   });
   it("admin credit adjustments can't overdraw below zero", async () => {
     as("ADMIN"); h.admins.add("ADMIN");

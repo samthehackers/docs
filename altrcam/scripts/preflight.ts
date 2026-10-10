@@ -8,11 +8,13 @@
 import postgres from "postgres";
 import { createClient } from "@supabase/supabase-js";
 import { Redis } from "@upstash/redis";
-import { createClerkClient } from "@clerk/backend";
 import { getTableName, is } from "drizzle-orm";
 import { PgTable } from "drizzle-orm/pg-core";
 import * as schema from "@/db/schema";
 import { env, type Env } from "@/lib/env";
+import { cleanDatabaseUrl, postgresOptions } from "@/lib/database-url";
+
+const connect = (raw: string) => { const { url } = cleanDatabaseUrl(raw); return postgres(url, postgresOptions(url, { max: 1 })); };
 
 type Level = "PASS" | "FAIL" | "WARN" | "SKIP";
 const rows: { name: string; level: Level; note: string }[] = [];
@@ -34,13 +36,13 @@ async function main() {
   let e: Env | null = null;
   await check("Environment variables validate", async () => { e = env(); });
   if (!e) {
-    for (const n of ["Database", "Row-level security", "Storage bucket", "Clerk key", "Paystack plans", "NOWPayments key", "Resend sender domain", "Upstash Redis"]) rec(n, "SKIP", "needs a valid environment");
+    for (const n of ["Database", "Row-level security", "Storage bucket", "Supabase Auth key", "Paystack plans", "NOWPayments key", "Resend sender domain", "Upstash Redis"]) rec(n, "SKIP", "needs a valid environment");
     return report();
   }
   const cfg: Env = e;
 
   await check("Database reachable, all tables present", async () => {
-    const sql = postgres(cfg.DATABASE_URL, { prepare: false, max: 1 });
+    const sql = connect(cfg.DATABASE_URL);
     try {
       const t = await sql<{ table_name: string }[]>`select table_name from information_schema.tables where table_schema = 'public'`;
       const have = new Set(t.map((r) => r.table_name));
@@ -50,7 +52,7 @@ async function main() {
   });
 
   await check("Row-level security enabled on every table", async () => {
-    const sql = postgres(cfg.DATABASE_URL, { prepare: false, max: 1 });
+    const sql = connect(cfg.DATABASE_URL);
     try {
       const r = await sql<{ relname: string }[]>`select c.relname from pg_class c join pg_namespace n on n.oid = c.relnamespace where n.nspname = 'public' and c.relkind = 'r' and not c.relrowsecurity and c.relname = any(${EXPECTED_TABLES})`;
       if (r.length) return ["FAIL", `RLS off on: ${r.map((x) => x.relname).join(", ")}`];
@@ -64,8 +66,10 @@ async function main() {
     if (data.public) return ["FAIL", "bucket 'uploads' is PUBLIC. Make it private; users' images would be world-readable"];
   });
 
-  await check("Clerk secret key works", async () => {
-    await createClerkClient({ secretKey: cfg.CLERK_SECRET_KEY }).users.getUserList({ limit: 1 });
+  await check("Supabase service key can read Auth users", async () => {
+    const sb = createClient(cfg.SUPABASE_URL, cfg.SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false } });
+    const { error } = await sb.auth.admin.listUsers({ page: 1, perPage: 1 });
+    if (error) throw new Error(error.message);
   });
 
   await check("Paystack plans exist and match your prices", async () => {
@@ -110,7 +114,7 @@ async function main() {
   });
 
   rec("fal.ai signaling", "WARN", "cannot be checked here: verify with a live session (see GO_LIVE.md, step 'Verify fal signaling')");
-  rec("Webhook URLs registered", "WARN", "cannot be checked here: Clerk, Paystack, NOWPayments dashboards (see GO_LIVE.md)");
+  rec("Webhook URLs registered", "WARN", "cannot be checked here: Paystack, NOWPayments dashboards; Supabase Auth Site URL and redirect URLs (see GO_LIVE.md)");
   return report();
 }
 

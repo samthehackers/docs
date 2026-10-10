@@ -1,18 +1,14 @@
 /**
  * /api/studio/session/end records WHY the browser ended a session (so Admin can tell Stop from a failed connection),
  * accepts only a fixed set of reasons, still works with no reason (older clients, the pagehide beacon), and only ever
- * touches the caller's own sessions. Real route handler, in-memory Postgres, Clerk's auth mocked.
+ * touches the caller's own sessions. Real route handler, in-memory Postgres, the Supabase Auth seam (getUser) mocked.
  */
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { eq, sql } from "drizzle-orm";
 
 const h = vi.hoisted(() => ({ db: null as unknown, me: null as string | null }));
 
-vi.mock("@clerk/nextjs/server", () => ({
-  auth: async () => ({ userId: h.me }),
-  clerkClient: async () => ({ users: { getUser: async () => ({ publicMetadata: {} }), deleteUser: async () => {} } }),
-  clerkMiddleware: () => () => {}, createRouteMatcher: () => () => false, currentUser: async () => null,
-}));
+vi.mock("@/lib/supabase/server", async () => (await import("./supabase-auth-mock")).fakeServerModule(h));
 vi.mock("@/lib/db", async (orig) => ({ ...(await orig<typeof import("@/lib/db")>()), db: () => h.db }));
 
 import { testDb } from "./helpers";

@@ -19,6 +19,6 @@ export const DELETE = handle(async (req: Request) => {
   const user = await getUserRow(userId);
   if (!user) throw new HttpError(404, "Not found");
   if (b.confirm !== "DELETE") throw new HttpError(400, "Type DELETE to confirm");
-  await deleteAccount(userId, { deleteClerk: true });
+  await deleteAccount(userId, { deleteAuthUser: true });
   return NextResponse.json({ ok: true });
 });

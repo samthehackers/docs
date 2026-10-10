@@ -11,6 +11,7 @@
     "test": "vitest run",
     "test:integration": "vitest run -c vitest.integration.config.ts",
     "test:e2e": "playwright test",
+    "test:e2e:local": "bash scripts/e2e-local.sh",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx --env-file=.env.local scripts/migrate.ts",
     "db:seed": "tsx --env-file=.env.local scripts/seed.ts",
@@ -18,8 +19,6 @@
     "preflight": "tsx --env-file=.env.local scripts/preflight.ts"
   },
   "dependencies": {
-    "@clerk/nextjs": "^6.0.0",
-    "@clerk/themes": "^2.4.57",
     "@fal-ai/client": "^1.2.0",
     "@fal-ai/server-proxy": "^1.1.0",
     "@supabase/ssr": "^0.12.7",
@@ -35,13 +34,11 @@
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "resend": "^4.0.0",
-    "svix": "^1.40.0",
     "tailwind-merge": "^2.5.0",
     "tailwindcss-animate": "^1.0.7",
     "zod": "^3.23.8"
   },
   "devDependencies": {
-    "@clerk/testing": "^2.2.44",
     "@electric-sql/pglite": "^0.5.8",
     "@playwright/test": "^1.49.0",
     "@types/node": "^22.0.0",

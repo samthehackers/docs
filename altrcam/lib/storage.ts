@@ -1,4 +1,4 @@
-import { createClient } from "@supabase/supabase-js";
+import { createAdminClient, supabaseAdminConfig } from "@/lib/supabase/admin";
 import { randomUUID } from "node:crypto";
 import { HttpError } from "@/lib/api";
 
@@ -16,9 +16,8 @@ const LIMITS: Record<UploadKind, { types: string[]; maxBytes: number }> = {
 const EXT: Record<string, string> = { "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp", "video/webm": "webm", "video/mp4": "mp4" };
 
 function sb() {
-  const url = process.env.SUPABASE_URL, key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!url || !key) throw new Error("Supabase storage not configured");
-  return createClient(url, key, { auth: { persistSession: false } });
+  if (!supabaseAdminConfig()) throw new HttpError(503, "File storage isn't configured on this deployment yet.", { code: "unavailable" });
+  return createAdminClient();
 }
 
 /** Signed upload URL under a per-user prefix. Type and size are validated before signing. */

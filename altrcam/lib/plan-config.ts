@@ -2,6 +2,7 @@ import { z } from "zod";
 import { eq } from "drizzle-orm";
 import { auditLog, planConfig } from "@/db/schema";
 import { db, type DB } from "@/lib/db";
+import { databaseUrl } from "@/lib/database-url";
 import { DEFAULT_PLANS, type Plan, type PlanConfig } from "@/lib/plans";
 
 /** Bounds enforced here and by a CHECK constraint on the table. */
@@ -29,7 +30,7 @@ const clone = (p: Plans): Plans => ({ FREE: { ...p.FREE }, PRO: { ...p.PRO }, LI
  */
 export async function getPlans(d?: DB): Promise<Plans> {
   if (!d && cache && Date.now() - cache.at < TTL_MS) return clone(cache.value);
-  if (!d && !process.env.DATABASE_URL) return clone(DEFAULT_PLANS);
+  if (!d && !databaseUrl()) return clone(DEFAULT_PLANS);
 
   const merged = clone(DEFAULT_PLANS);
   try {

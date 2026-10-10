@@ -5,7 +5,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 
-export function AuthForm({ mode }: { mode: "sign-in" | "sign-up" }) {
+/** `google`: show "Continue with Google" only when the provider is enabled in Supabase (NEXT_PUBLIC_AUTH_GOOGLE_ENABLED=true). */
+export function AuthForm({ mode, google: googleEnabled = false }: { mode: "sign-in" | "sign-up"; google?: boolean }) {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -18,8 +19,13 @@ export function AuthForm({ mode }: { mode: "sign-in" | "sign-up" }) {
       ? await supabase.auth.signInWithPassword({ email, password })
       : await supabase.auth.signUp({ email, password, options: { emailRedirectTo: process.env.NEXT_PUBLIC_DEV_SUPABASE_REDIRECT_URL ?? `${window.location.origin}/auth/callback` } });
     setBusy(false);
-    if (result.error) { setMessage(result.error.message.includes("Invalid") ? "Invalid email or password." : result.error.message); return; }
-    if (mode === "sign-up" && !result.data.session) { setMessage("Check your email to confirm your account before signing in."); return; }
+    const verify = () => router.push(`/verify-email?email=${encodeURIComponent(email)}`);
+    if (result.error) {
+      // Supabase refuses password sign-in until the address is confirmed: offer the resend page instead of a dead end.
+      if (result.error.code === "email_not_confirmed" || /not confirmed/i.test(result.error.message)) { verify(); return; }
+      setMessage(result.error.message.includes("Invalid") ? "Invalid email or password." : result.error.message); return;
+    }
+    if (mode === "sign-up" && !result.data.session) { setMessage("Check your email to confirm your account before signing in."); verify(); return; }
     router.push("/dashboard"); router.refresh();
   }
   async function google() {
@@ -59,7 +65,7 @@ export function AuthForm({ mode }: { mode: "sign-in" | "sign-up" }) {
     {message && <p role="status" aria-live="polite" className="text-sm text-muted-foreground">{message}</p>}
     <button disabled={busy} className="rounded-lg bg-primary px-4 py-2 font-medium text-primary-foreground disabled:opacity-50">{busy ? "Please wait…" : mode === "sign-in" ? "Sign in" : "Create account"}</button>
     {mode === "sign-in" && <button type="button" onClick={resetPassword} disabled={busy} className="text-sm text-muted-foreground underline underline-offset-4 disabled:opacity-50">Forgot password?</button>}
-    <button type="button" onClick={google} disabled={busy} className="rounded-lg border border-white/15 px-4 py-2 disabled:opacity-50">Continue with Google</button>
+    {googleEnabled && <button type="button" onClick={google} disabled={busy} className="rounded-lg border border-white/15 px-4 py-2 disabled:opacity-50">Continue with Google</button>}
     <Link className="text-center text-sm text-muted-foreground underline" href={mode === "sign-in" ? "/sign-up" : "/sign-in"}>{mode === "sign-in" ? "Create an account" : "Already have an account? Sign in"}</Link>
   </form>;
 }

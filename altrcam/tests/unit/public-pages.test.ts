@@ -11,9 +11,10 @@ import * as React from "react";
 import type { ReactElement } from "react";
 
 const h = vi.hoisted(() => ({ me: null as string | null, authCalls: 0, authThrows: false as boolean | Error, plans: null as null | Record<string, unknown> }));
-// The Clerk widgets are stubbed so the sign-in and sign-up pages can be rendered here.
-vi.mock("@clerk/nextjs", () => ({ SignUp: () => "CLERK_SIGNUP_FORM", SignIn: () => "CLERK_SIGNIN_FORM" }));
-vi.mock("@clerk/nextjs/server", () => ({ auth: async () => { h.authCalls++; if (h.authThrows) throw h.authThrows instanceof Error ? h.authThrows : new Error("clerk down"); return { userId: h.me }; } }));
+// The sign-in form (a client component) is stubbed so the sign-in and sign-up pages can be rendered here.
+vi.mock("@/components/auth-form", () => ({ AuthForm: ({ mode, google }: { mode: string; google?: boolean }) => `AUTH_FORM_${mode}${google ? "_GOOGLE" : ""}` }));
+// The Supabase Auth seam (getUser) acts as the visitor chosen by h.me.
+vi.mock("@/lib/supabase/server", async () => (await import("./supabase-auth-mock")).fakeServerModule(h));
 // Plan limits come from the database in production; a test can hand the pages a specific set instead.
 vi.mock("@/lib/plan-config", async (orig) => {
   const real = await orig<typeof import("@/lib/plan-config")>();
@@ -43,7 +44,7 @@ beforeEach(() => {
   process.env.DATABASE_URL = "postgres://unused/ignored"; // "accounts are open" needs a database to be configured
   process.env.PAYSTACK_SECRET_KEY = "sk_test_x"; // "checkout is open" needs a payment provider
   process.env.CRON_SECRET = "cron_x"; // the monthly refill needs it, so "every month" can be promised
-  process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY = "pk_test_x"; process.env.CLERK_SECRET_KEY = "sk_test_x";
+  process.env.NEXT_PUBLIC_SUPABASE_URL = "https://example.supabase.co"; process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY = "sb_publishable_x"; delete process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
   process.env.PRICE_PRO_MONTHLY = "1500000"; process.env.PRICE_PRO_YEARLY = "15000000"; process.env.PRICE_LIFETIME = "9900000";
   process.env.PRICE_TOPUP_1K = "300000"; process.env.PRICE_TOPUP_5K = "1200000"; process.env.PRICE_TOPUP_15K = "3000000";
   process.env.PRICE_CURRENCY = "NGN";
@@ -165,8 +166,8 @@ describe("where the studio buttons go", () => {
     }
     expect(plain(await landing())).not.toContain("free credits every month");
   });
-  it("without Clerk configured the pages still render, signed out, offer no sign-up button, and Clerk is never called", async () => {
-    delete process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY; delete process.env.CLERK_SECRET_KEY;
+  it("without Supabase Auth configured the pages still render, signed out, offer no sign-up button, and Auth is never called", async () => {
+    delete process.env.NEXT_PUBLIC_SUPABASE_URL; delete process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
     expect(await viewerId()).toBeNull();
     for (const render of [landing, how]) {
       const s = await render();
@@ -304,7 +305,7 @@ describe("review follow-ups: the pages that ask for money, and sentences tied to
     expect(plain(await layout())).toContain("Dashboard");
     expect(plain(await layout())).not.toContain("Get started");
   });
-  it("a Clerk failure reads as signed out instead of taking the public pages down", async () => {
+  it("a Supabase Auth failure reads as signed out instead of taking the public pages down", async () => {
     h.authThrows = true;
     const err = vi.spyOn(console, "error").mockImplementation(() => {});
     expect(await viewerId()).toBeNull();
@@ -346,7 +347,7 @@ describe("review follow-ups: the pages that ask for money, and sentences tied to
   });
 });
 
-describe("what the pages promise when accounts are not open (the live deployment had no Clerk keys and no database)", () => {
+describe("what the pages promise when accounts are not open (the live deployment once had no auth keys and no database)", () => {
   it("the shared live-video note no longer says visitors can create an account", () => {
     expect(`${LIVE_AVAILABILITY.title} ${LIVE_AVAILABILITY.body}`).not.toMatch(/create an account|look around/i);
     expect(LIVE_AVAILABILITY.body).toMatch(/even if the connection fails/);
@@ -358,13 +359,13 @@ describe("what the pages promise when accounts are not open (the live deployment
     expect(t).not.toMatch(/free credits every month/);
     expect(t).not.toMatch(/create an account/i);
   });
-  it("without Clerk keys it says the same", async () => {
-    delete process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY; delete process.env.CLERK_SECRET_KEY;
+  it("without Supabase Auth keys it says the same", async () => {
+    delete process.env.NEXT_PUBLIC_SUPABASE_URL; delete process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
     const t = plain(await landing());
     expect(t).toContain("Sign-up isn't open on this deployment yet.");
     expect(t).not.toMatch(/free credits every month/);
   });
-  it("with Clerk and a database it promises the free credits, from the plan config", async () => {
+  it("with Supabase Auth and a database it promises the free credits, from the plan config", async () => {
     const t = plain(await landing());
     expect(t).toContain("300 free credits every month. No card needed.");
     expect(t).not.toContain("Sign-up isn't open");
@@ -397,24 +398,24 @@ describe("what the pages promise when accounts are not open (the live deployment
 
 describe("one answer to 'is sign-up open', everywhere (review of the account-claim fix)", () => {
   const ENVS = [
-    { name: "neither", clerk: false, db: false },
-    { name: "Clerk only", clerk: true, db: false },
-    { name: "database only", clerk: false, db: true },
-    { name: "Clerk and database", clerk: true, db: true },
+    { name: "neither", auth: false, db: false },
+    { name: "Supabase Auth only", auth: true, db: false },
+    { name: "database only", auth: false, db: true },
+    { name: "Supabase Auth and database", auth: true, db: true },
   ];
-  const setEnv = (e: { clerk: boolean; db: boolean }) => {
-    if (!e.clerk) { delete process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY; delete process.env.CLERK_SECRET_KEY; }
+  const setEnv = (e: { auth: boolean; db: boolean }) => {
+    if (!e.auth) { delete process.env.NEXT_PUBLIC_SUPABASE_URL; delete process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY; }
     if (!e.db) delete process.env.DATABASE_URL;
   };
   for (const e of ENVS) {
     it(`${e.name}: the landing page, how-it-works, pricing, header and both auth pages all agree`, async () => {
       setEnv(e);
-      const open = e.clerk && e.db;
+      const open = e.auth && e.db;
       const l = await landing(), hw = await how(), pr = await pricing(), hd = await layout();
-      const su = html((await SignUpPage()) as ReactElement), si = html((await SignInPage()) as ReactElement);
+      const su = html((await SignUpPage()) as ReactElement), si = html((await SignInPage({})) as ReactElement);
       if (open) {
-        expect(plain(su)).toContain("CLERK_SIGNUP_FORM");
-        expect(plain(si)).toContain("CLERK_SIGNIN_FORM");
+        expect(plain(su)).toContain("AUTH_FORM_sign-up");
+        expect(plain(si)).toContain("AUTH_FORM_sign-in");
         expect(hrefs(l)).toContain("/sign-up"); expect(hrefs(hw)).toContain("/sign-up");
         expect(plain(hd)).toContain("Get started"); expect(plain(hd)).toContain("Sign in");
         expect(plain(pr)).toContain("Start free");
@@ -422,7 +423,7 @@ describe("one answer to 'is sign-up open', everywhere (review of the account-cla
       } else {
         expect(plain(su)).toContain("Account access is not configured for this deployment yet");
         expect(plain(si)).toContain("Account access is not configured for this deployment yet");
-        expect(plain(su)).not.toContain("CLERK_SIGNUP_FORM");
+        expect(plain(su)).not.toContain("AUTH_FORM");
         for (const s of [l, hw]) { expect(hrefs(s)).not.toContain("/sign-up"); expect(plain(s)).toContain("Sign-up isn't open on this deployment yet."); }
         expect(hrefs(hd)).not.toContain("/sign-up"); expect(hrefs(hd)).not.toContain("/sign-in");
         expect(plain(hd)).not.toMatch(/Get started|Sign in/);
@@ -431,11 +432,11 @@ describe("one answer to 'is sign-up open', everywhere (review of the account-cla
       }
     });
   }
-  it("partial Clerk configuration (one key) counts as not configured, on the landing page and the auth pages", async () => {
-    delete process.env.CLERK_SECRET_KEY;
+  it("partial Supabase configuration (URL or key only) counts as not configured, on the landing page and the auth pages", async () => {
+    delete process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
     expect(plain(await landing())).toContain("Sign-up isn't open on this deployment yet.");
     expect(plain(html((await SignUpPage()) as ReactElement))).toContain("Account access is not configured");
-    process.env.CLERK_SECRET_KEY = "sk_test_x"; delete process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY;
+    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY = "sb_publishable_x"; delete process.env.NEXT_PUBLIC_SUPABASE_URL;
     expect(plain(await landing())).toContain("Sign-up isn't open on this deployment yet.");
   });
   it("the closed notices are announced as status messages", async () => {
@@ -489,7 +490,7 @@ describe("one answer to 'is sign-up open', everywhere (review of the account-cla
   });
   it("with no credentials at all the pages render using the real plan fallback", async () => {
     h.plans = null;
-    for (const k of ["NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY", "CLERK_SECRET_KEY", "DATABASE_URL", "PAYSTACK_SECRET_KEY", "CRON_SECRET"]) delete process.env[k];
+    for (const k of ["NEXT_PUBLIC_SUPABASE_URL", "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY", "DATABASE_URL", "PAYSTACK_SECRET_KEY", "CRON_SECRET"]) delete process.env[k];
     const l = plain(await landing());
     expect(l).toContain("Be anyone.");
     expect(plain(await pricing())).toContain("Camera feed requested at 640×360"); // the default Free plan, from the code defaults

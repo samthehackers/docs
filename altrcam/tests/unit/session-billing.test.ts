@@ -5,18 +5,14 @@
  * cron happened to run before the user clicked Start, and a user whose laptop died can be charged up to their
  * plan's whole session length for time they were not connected.
  *
- * Drives the real route handler against an in-memory Postgres with Clerk's auth mocked.
+ * Drives the real route handler against an in-memory Postgres with the Supabase Auth seam (getUser) mocked.
  */
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { eq, sql } from "drizzle-orm";
 
 const h = vi.hoisted(() => ({ db: null as unknown, me: null as string | null }));
 
-vi.mock("@clerk/nextjs/server", () => ({
-  auth: async () => ({ userId: h.me }),
-  clerkClient: async () => ({ users: { getUser: async () => ({ publicMetadata: {} }), deleteUser: async () => {} } }),
-  clerkMiddleware: () => () => {}, createRouteMatcher: () => () => false, currentUser: async () => null,
-}));
+vi.mock("@/lib/supabase/server", async () => (await import("./supabase-auth-mock")).fakeServerModule(h));
 vi.mock("@/lib/db", async (orig) => ({ ...(await orig<typeof import("@/lib/db")>()), db: () => h.db }));
 
 import { testDb } from "./helpers";

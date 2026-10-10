@@ -12,8 +12,8 @@ import { viewerId } from "@/lib/viewer";
 
 export const metadata = { title: { absolute: "AltrCam — Be anyone. Live." } };
 
-// With Clerk configured this page is dynamic (the layout reads the session), so admin-edited plan limits show within the plan-config
-// cache time (about 15 s). With no Clerk it is static and revalidates every minute.
+// With Supabase Auth configured this page is dynamic (the layout reads the session), so admin-edited plan limits show within the plan-config
+// cache time (about 15 s). With no Auth configured it is static and revalidates every minute.
 export const revalidate = 60;
 
 const features = [

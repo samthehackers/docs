@@ -10,6 +10,15 @@ import { buildSync } from "esbuild";
 import path from "node:path";
 import { PASS_CRITERIA, type DiagnosticsReport } from "../../lib/diagnostics/criteria";
 
+// Top-level (Playwright forbids launchOptions in a describe). Host candidates as plain IPs: the loopback peers are in one
+// page and cannot rely on mDNS in a container. Harmless for the other test here.
+test.use({
+  launchOptions: {
+    ...(process.env.PW_CHROMIUM_PATH ? { executablePath: process.env.PW_CHROMIUM_PATH } : {}),
+    args: ["--disable-features=WebRtcHideLocalIpsWithMdns", "--autoplay-policy=no-user-gesture-required"],
+  },
+});
+
 test("the diagnostics page and its API are protected routes (503 without sign-in configured)", async ({ page, request }) => {
   const res = await page.goto("/admin/diagnostics");
   expect(res?.status()).toBe(503);
@@ -20,14 +29,6 @@ test("the diagnostics page and its API are protected routes (503 without sign-in
 });
 
 test.describe("measuring against real Chromium WebRTC (local loopback, no fal)", () => {
-  test.use({
-    launchOptions: {
-      ...(process.env.PW_CHROMIUM_PATH ? { executablePath: process.env.PW_CHROMIUM_PATH } : {}),
-      // Host candidates as plain IPs: the loopback peers are in one page and cannot rely on mDNS in a container.
-      args: ["--disable-features=WebRtcHideLocalIpsWithMdns", "--autoplay-policy=no-user-gesture-required"],
-    },
-  });
-
   test("a full check passes on a loopback and every number comes from the browser", async ({ page }) => {
     test.setTimeout(90_000);
     const bundle = buildSync({

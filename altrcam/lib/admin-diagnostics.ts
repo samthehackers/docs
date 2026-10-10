@@ -49,7 +49,7 @@ const StartBody = z.object({ prompt: z.string().trim().max(500).optional() });
 /** POST /api/admin/diagnostics/session: a short, unbilled session the token proxy accepts, for this admin only. */
 export async function startDiagnosticsSession(req: Request) {
   const adminId = await requireAdminId();
-  if (!capabilities().liveTransformation) throw new HttpError(503, "Live transformation isn't configured on this deployment (FAL_KEY is not set).", { code: "unavailable" });
+  if (!capabilities().liveTransformation) throw new HttpError(503, "Live transformation isn't configured on this deployment (the fal API key is not set).", { code: "unavailable" });
   await rateLimit("sessionStart", `diagnostics:${adminId}`);
   const body = await parseBody(req, StartBody);
   if (!(await getUserRow(adminId))) throw new HttpError(403, "Account not found");

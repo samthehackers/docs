@@ -70,7 +70,7 @@ export function DiagnosticsPanel({ app, configured }: { app: string; configured:
           ? <Button variant="outline" onClick={() => abortRef.current?.abort()} data-testid="diagnostics-stop">Stop</Button>
           : <Button onClick={run} data-testid="diagnostics-run">{report ? "Run again" : "Run check"}</Button>}
       </div>
-      {!configured && <p role="alert" className="rounded-md border border-destructive/50 p-3 text-sm">FAL_KEY is not set on this deployment, so the server will refuse the check (it will report <code>not_configured</code>).</p>}
+      {!configured && <p role="alert" className="rounded-md border border-destructive/50 p-3 text-sm">The fal API key is not set on this deployment, so the server will refuse the check (it will report <code>not_configured</code>).</p>}
 
       <div className="grid gap-4 sm:grid-cols-2">
         <figure className="space-y-1">

@@ -98,8 +98,10 @@ suite("fair billing under concurrency (real PostgreSQL)", () => {
   it(`${REFUNDS_PER_DAY + 3} early drops of different sessions ending at once: only ${REFUNDS_PER_DAY} are refunded`, async () => {
     const ids: string[] = [];
     for (let i = 0; i < REFUNDS_PER_DAY + 3; i++) ids.push(await session(9, 7, { lastHeartbeatAt: ago(1) }));
-    for (const id of ids) await meterSession(id, "u", { now: ago(2) }); // each billed 5 s by a heartbeat
-    const rs = await Promise.all(ids.map((id) => meterSession(id, "u", { end: "connection_failed", failure: "socket_error" })));
+    const now = new Date();
+    for (const id of ids) await meterSession(id, "u", { now }); // each billed 7 s by a heartbeat
+    // The ends debit nothing more (same instant), so only the refund's own user-row lock serialises the daily count.
+    const rs = await Promise.all(ids.map((id) => meterSession(id, "u", { now, end: "connection_failed", failure: "socket_error" })));
     expect(rs.filter((r) => r!.refunded > 0)).toHaveLength(REFUNDS_PER_DAY);
     expect((await db().select().from(auditLog).where(eq(auditLog.action, "session.refund_refused")))).toHaveLength(3);
     const total = await consistent();

@@ -11,6 +11,7 @@ import type { LucyFailure } from "@/lib/fal/signaling";
  */
 export const STUDIO_NOTICES = {
   videoOnly: "AltrCam transforms video only. Your microphone isn't used, and no audio is captured or sent.",
+  notConfigured: "Live video isn't configured on this deployment yet, so Go live can't connect. Nothing is charged when you try.",
   unverified: "Live transformation hasn't been tested against the real AI service yet, so connecting may not work. Credits are used while a session is open, even if it never connects.",
 } as const;
 

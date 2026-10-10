@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
-const url = process.env.NEXT_PUBLIC_APP_URL ?? "https://altrcam.com";
+import { appUrl } from "@/lib/app-url";
+const url = appUrl();
 const title = "AltrCam — Be anyone. Live.";
 const description = "AltrCam is built to restyle your webcam video with a realtime AI model: a character, a backdrop, an outfit or an art style. Live video has not been tested end to end yet.";
 export const metadata: Metadata = { metadataBase: new URL(url), title: { default: title, template: "%s · AltrCam" }, description, openGraph: { title, description, url, siteName: "AltrCam", type: "website" }, twitter: { card: "summary_large_image", title, description } };

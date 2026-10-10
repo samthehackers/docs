@@ -32,7 +32,8 @@ export default async function History({ searchParams }: { searchParams: Promise<
     db().select().from(transformations).where(and(...conds)).orderBy(desc(transformations.createdAt)).limit(PAGE).offset((page - 1) * PAGE),
     db().select({ n: count() }).from(transformations).where(and(...conds)),
   ]);
-  const thumbs = await Promise.all(rows.map((r) => (r.thumbnailUrl ? signedReadUrl(r.thumbnailUrl) : null)));
+  // A storage hiccup (or storage not configured) shows a blank tile instead of failing the whole page.
+  const thumbs = await Promise.all(rows.map((r) => (r.thumbnailUrl ? signedReadUrl(r.thumbnailUrl).catch(() => null) : null)));
   const pages = Math.max(1, Math.ceil(n / PAGE));
   const filtered = Boolean(sp.type || sp.from || sp.to);
   const qs = (p: number) => { const q = new URLSearchParams(); if (sp.type) q.set("type", sp.type); if (sp.from) q.set("from", sp.from); if (sp.to) q.set("to", sp.to); q.set("page", String(p)); return `?${q}`; };

@@ -5,7 +5,7 @@ import { authErrorMessage } from "@/lib/safe-redirect";
 
 export const metadata = { title: "Sign in" };
 
-export default async function Page({ searchParams }: { searchParams?: Promise<{ error?: string | string[] }> } = {}) {
+export default async function Page({ searchParams }: { searchParams?: Promise<{ error?: string | string[] }> }) {
   const error = authErrorMessage((await searchParams)?.error);
   return (
     <main className="flex min-h-screen flex-col items-center justify-center gap-6 px-4 py-10">

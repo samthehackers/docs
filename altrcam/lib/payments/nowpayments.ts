@@ -1,5 +1,6 @@
 import type { PaymentProvider, VerifiedPayment } from "./provider";
 import { hmacSha512Hex, safeEqualHex } from "./paystack";
+import { appUrl } from "@/lib/app-url";
 
 const API = "https://api.nowpayments.io/v1";
 
@@ -30,7 +31,7 @@ export const nowpayments: PaymentProvider = {
   name: "nowpayments",
 
   async createCheckout({ product, reference, amountMinor, currency }) {
-    const app = process.env.NEXT_PUBLIC_APP_URL;
+    const app = appUrl();
     const inv = await np<{ invoice_url: string }>("/invoice", {
       method: "POST",
       body: JSON.stringify({

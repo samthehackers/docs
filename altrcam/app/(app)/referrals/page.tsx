@@ -8,6 +8,7 @@ import { users } from "@/db/schema";
 import { referralStats } from "@/lib/referrals";
 import { REFERRAL } from "@/lib/plans";
 import { fmtNum } from "@/lib/utils";
+import { appUrl } from "@/lib/app-url";
 
 export const metadata = { title: "Referrals" };
 export const dynamic = "force-dynamic";
@@ -20,7 +21,7 @@ export default async function Referrals() {
     await db().update(users).set({ referralCode: code }).where(eq(users.id, user.id));
   }
   const stats = await referralStats(db(), user.id);
-  const link = `${process.env.NEXT_PUBLIC_APP_URL ?? "https://altrcam.com"}/?ref=${code}`;
+  const link = `${appUrl()}/?ref=${code}`;
   const mins = Math.round(REFERRAL.rewardCredits / 60);
 
   return (

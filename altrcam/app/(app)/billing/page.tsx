@@ -29,7 +29,7 @@ export default async function Billing() {
       <h1 className="text-3xl font-bold">Billing</h1>
       <PricingNotice />
       <AvailabilityNotice />
-      {!capabilities().paystack && <p role="status" className="rounded-md border p-3 text-sm text-muted-foreground">Payments aren't available on this deployment yet, so checkout is disabled.</p>}
+      {!capabilities().paystack && <p role="status" className="rounded-md border p-3 text-sm text-muted-foreground">Payments aren't available on this deployment yet, so checkout won't open and nothing can be charged.</p>}
 
       <Card className="flex flex-wrap items-center justify-between gap-4">
         <div>

@@ -1,6 +1,7 @@
 import { createHmac, createHash, timingSafeEqual } from "node:crypto";
 import type { PaymentProvider, VerifiedPayment } from "./provider";
 import { PRODUCTS } from "@/lib/plans";
+import { appUrl } from "@/lib/app-url";
 
 // Overridable so e2e tests can point server-to-server verification at a local mock.
 const API = process.env.PAYSTACK_API_URL ?? "https://api.paystack.co";
@@ -39,7 +40,7 @@ export const paystack: PaymentProvider = {
       method: "POST",
       body: JSON.stringify({
         email, amount: amountMinor, currency, reference,
-        callback_url: `${process.env.NEXT_PUBLIC_APP_URL}/billing/success?ref=${encodeURIComponent(reference)}`,
+        callback_url: `${appUrl()}/billing/success?ref=${encodeURIComponent(reference)}`,
         metadata: { userId, product, kind: p.kind },
         ...(plan ? { plan } : {}),
       }),

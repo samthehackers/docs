@@ -16,7 +16,7 @@ const LIMITS: Record<UploadKind, { types: string[]; maxBytes: number }> = {
 const EXT: Record<string, string> = { "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp", "video/webm": "webm", "video/mp4": "mp4" };
 
 function sb() {
-  if (!supabaseAdminConfig()) throw new Error("Supabase storage not configured");
+  if (!supabaseAdminConfig()) throw new HttpError(503, "File storage isn't configured on this deployment yet.", { code: "unavailable" });
   return createAdminClient();
 }
 

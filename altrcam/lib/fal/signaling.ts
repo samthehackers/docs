@@ -79,6 +79,28 @@ export interface ConnectOptions {
    * "closed" is only reported for a close() the caller asked for.
    */
   onState: (s: ConnState, detail?: string, failure?: LucyFailure) => void;
+  /**
+   * Optional observer, used by the admin diagnostics check (/admin/diagnostics): named milestones of this attempt, in
+   * order. It only observes. Whatever it does, even throwing, changes nothing about the connection. It is never given the
+   * token, the SDP, the prompt or any message content: only event names, message types or keys, and counts.
+   */
+  onTrace?: (event: TraceEvent, detail?: string) => void;
+}
+
+/** What `onTrace` reports. `server_message` carries the incoming message's `type` (or, without one, its keys). */
+export type TraceEvent =
+  | "token_requested" | "token_received" | "token_failed"
+  | "offer_created" | "offer_sent" | "server_message" | "outbox_flushed"
+  | "answer_applied" | "local_candidate" | "remote_candidate" | "remote_track";
+
+/** A message's shape for diagnostics: its `type`, or its top-level keys. Never a value. */
+export function describeMessage(m: unknown): string {
+  if (m && typeof m === "object" && !Array.isArray(m)) {
+    const t = (m as { type?: unknown }).type;
+    if (typeof t === "string") return `type=${t.slice(0, 40)}`;
+    return `keys=${Object.keys(m).slice(0, 8).map((k) => k.slice(0, 30)).join(",")}`;
+  }
+  return Array.isArray(m) ? "array" : typeof m;
 }
 
 /** The offer is made before the service can say anything, so it uses a public STUN server; ice_servers messages are not used. */
@@ -145,6 +167,8 @@ export function connectLucy(o: ConnectOptions): LucyConnection {
   let offerSent = false;
   let replied = false;
 
+  const trace = (event: TraceEvent, detail?: string) => { try { o.onTrace?.(event, detail); } catch { /* an observer cannot break the connection */ } };
+
   o.onState("connecting");
 
   const socket = fal.realtime.connect<Outgoing, Incoming>(FAL_APP, {
@@ -154,10 +178,16 @@ export function connectLucy(o: ConnectOptions): LucyConnection {
     // No tokenExpirationSeconds: the client then schedules no token-refresh timer (it never clears one when the socket
     // closes before it opens), and an open socket does not need a fresh token.
     tokenProvider: async () => {
-      try { return await requestToken(o.sessionId); } catch (e) { fail(tokenFailure(e)); throw e; }
+      trace("token_requested");
+      try {
+        const token = await requestToken(o.sessionId);
+        trace("token_received");
+        return token;
+      } catch (e) { trace("token_failed", errorText(e)); fail(tokenFailure(e)); throw e; }
     },
     onResult: (msg) => {
       if (closed) return;
+      trace("server_message", describeMessage(msg));
       replied = true;
       flush();
       void handleIncoming(msg as Incoming).catch((e) => fail({ code: "setup_error", message: errorText(e) }));
@@ -195,14 +225,19 @@ export function connectLucy(o: ConnectOptions): LucyConnection {
     try { socket.send(m); } catch (e) { fail({ code: "setup_error", message: `Could not send to the service: ${errorText(e)}` }); }
   }
   const enqueue = (m: Outgoing) => { if (offerSent && replied) sendNow(m); else outbox.push(m); };
-  function flush() { if (offerSent && replied) for (const m of outbox.splice(0)) sendNow(m); }
+  function flush() {
+    if (!offerSent || !replied || !outbox.length) return;
+    const queued = outbox.splice(0);
+    for (const m of queued) sendNow(m);
+    trace("outbox_flushed", String(queued.length));
+  }
 
   async function start() {
     const conn = new RTCPeerConnection({ iceServers: ICE_SERVERS });
     pc = conn;
     o.stream.getTracks().forEach((t) => conn.addTrack(t, o.stream));
-    conn.ontrack = (ev) => { if (ev.streams[0]) o.onRemoteStream(ev.streams[0]); };
-    conn.onicecandidate = (ev) => { if (ev.candidate) enqueue({ type: "ice_candidate", candidate: ev.candidate.toJSON() }); };
+    conn.ontrack = (ev) => { if (ev.streams[0]) { trace("remote_track"); o.onRemoteStream(ev.streams[0]); } };
+    conn.onicecandidate = (ev) => { if (ev.candidate) { trace("local_candidate", ev.candidate.type ?? undefined); enqueue({ type: "ice_candidate", candidate: ev.candidate.toJSON() }); } };
     conn.onconnectionstatechange = () => {
       if (conn.connectionState === "connected") { clearTimeout(answerTimer); clearTimeout(iceTimer); clearTimeout(lostTimer); o.onState("live"); }
       else if (conn.connectionState === "failed") fail({ code: "ice_failed", message: "Connection failed" });
@@ -215,12 +250,14 @@ export function connectLucy(o: ConnectOptions): LucyConnection {
     const offer = await conn.createOffer();
     await conn.setLocalDescription(offer);
     if (closed) return; // closed while the browser was negotiating
+    trace("offer_created");
     sendNow({
       type: "offer", sdp: offer.sdp ?? "",
       prompt: o.inputs.prompt,
       enable_prompt_expansion: o.inputs.enablePromptExpansion,
       ...(o.inputs.referenceImageUrl ? { reference_image_url: o.inputs.referenceImageUrl } : {}),
     });
+    if (!closed) trace("offer_sent");
     offerSent = true;
     flush();
     answerTimer = setTimeout(() => fail({ code: "answer_timeout", message: "Timed out waiting for the model to answer" }), ANSWER_TIMEOUT_MS);
@@ -237,6 +274,7 @@ export function connectLucy(o: ConnectOptions): LucyConnection {
         if (!pc) return;
         try { await pc.setRemoteDescription({ type: "answer", sdp: msg.sdp }); } catch (e) { fail({ code: "bad_answer", message: `Could not apply the answer: ${errorText(e)}` }); return; }
         if (closed) return;
+        trace("answer_applied");
         // The service answered, so "no answer" is no longer the failure to report. If ICE then never connects (NAT, firewall,
         // VPN, no TURN) say so, instead of blaming the service for silence.
         clearTimeout(answerTimer);
@@ -245,6 +283,7 @@ export function connectLucy(o: ConnectOptions): LucyConnection {
         for (const c of pendingRemote.splice(0)) await pc.addIceCandidate(c).catch(() => {});
         break;
       case "ice_candidate":
+        trace("remote_candidate");
         if (!pc || !remoteSet) pendingRemote.push(msg.candidate);
         else await pc.addIceCandidate(msg.candidate).catch(() => {});
         break;

@@ -24,6 +24,7 @@ export default async function Admin({ searchParams }: { searchParams: Promise<{ 
     <div className="space-y-6">
       <nav aria-label="Admin" className="flex flex-wrap gap-1 text-sm">
         {TABS.map((t) => <Link key={t} href={`/admin?tab=${t}`} className={`rounded-md px-3 py-1.5 capitalize ${t === tab ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted"}`}>{t}</Link>)}
+        <Link href="/admin/diagnostics" className="rounded-md px-3 py-1.5 text-muted-foreground hover:bg-muted">Realtime diagnostics</Link>
       </nav>
       {tab === "overview" && <Overview />}
       {tab === "users" && <Users q={sp.q ?? ""} userId={sp.user} />}

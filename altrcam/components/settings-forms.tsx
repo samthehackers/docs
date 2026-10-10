@@ -3,6 +3,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { createClient } from "@/lib/supabase/client";
 
 export function NotifyToggle({ initial }: { initial: boolean }) {
   const [on, setOn] = useState(initial);
@@ -20,7 +21,8 @@ export function DeleteAccount() {
   async function del() {
     setBusy(true); setErr(null);
     const r = await fetch("/api/account", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ confirm: text }) });
-    if (r.ok) { router.push("/"); router.refresh(); return; }
+    // The login is gone server-side; also drop the session cookies in this browser.
+    if (r.ok) { await createClient().auth.signOut().catch(() => {}); router.push("/"); router.refresh(); return; }
     setErr((await r.json().catch(() => ({}))).error ?? "Couldn't delete"); setBusy(false);
   }
   return (

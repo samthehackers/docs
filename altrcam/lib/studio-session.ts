@@ -11,13 +11,15 @@
  *  - Reconnect always ends the failed attempt and starts a NEW server session, billed from its own first frame.
  *  - Nothing started by an old attempt (a late response, a stale callback, a timer) can touch the current one.
  *  - dispose() leaves no timer, listener or connection behind.
- * There is deliberately no automatic retry: every attempt is a new billed session, and until the first real run
- * against the service shows what goes wrong, retrying on its own could silently use credits on attempts that fail
- * the same way every time.
+ *  - Go live gives up if no transformed frame has rendered within CONNECT_TIMEOUT_SECONDS (connect_timeout).
+ *  - Exactly ONE automatic retry per Go live, and only for an ICE failure before the first frame: that attempt never
+ *    went live, so it cost nothing, and the retry is a fresh session. The failed one is ended first (the server records
+ *    it as failed_connect, 0 credits). The retry's own failure is shown like any other; it never retries again.
  */
 import type { ConnectOptions, ConnState, LucyConnection, LucyFailure, RtcStats } from "@/lib/fal/signaling";
 import type { ClientEndReason } from "@/lib/session-end";
-import { describeFailure, describeStartFailure, MESSAGES, refundedText, type Notice } from "@/lib/studio-messages";
+import { CONNECT_TIMEOUT_SECONDS } from "@/lib/plans";
+import { describeFailure, describeStartFailure, MESSAGES, refundedText, type Notice, type StudioFailure } from "@/lib/studio-messages";
 
 export interface StartInputs {
   prompt: string;
@@ -37,6 +39,34 @@ export interface SessionView {
   stats: RtcStats | null;
   /** Browser time (ms) at which this session's first transformed frame rendered: credits count from then. Null before. */
   liveSince: number | null;
+  /** The connection is recovering (or renegotiating) after the session had gone live. It is still billed: same session. */
+  reconnecting: boolean;
+  /** The last session, once it is over: how long it was live and, once the server confirms, what it cost. */
+  ended: SessionSummary | null;
+}
+
+export interface SessionSummary {
+  /** Seconds from the first frame to the end, by the browser's clock; null if it never went live. */
+  liveSeconds: number | null;
+  /** Seconds the server billed (1 credit each), once it has confirmed the end; null until then. */
+  billed: number | null;
+  /** Credits the server gave back for an early drop. */
+  refunded: number;
+}
+
+/** The connection state as the Studio shows it: Ready, then Connecting → Live → Reconnecting → Ended. */
+export type SessionPhase = "ready" | "connecting" | "live" | "reconnecting" | "ended";
+export const PHASE_LABELS: Record<SessionPhase, string> = { ready: "Ready", connecting: "Connecting", live: "Live", reconnecting: "Reconnecting", ended: "Ended" };
+
+/**
+ * Live means the transformed video is on screen (and billed); a connection that is up but has shown no frame yet is
+ * still Connecting. A failed session is Ended too; the notice says why.
+ */
+export function sessionPhase(v: SessionView): SessionPhase {
+  if (v.state === "connecting") return v.reconnecting ? "reconnecting" : "connecting";
+  if (v.state === "live") return v.liveSince === null ? "connecting" : "live";
+  if (v.state === "failed" || v.ended) return "ended";
+  return "ready";
 }
 
 export interface SessionDeps {
@@ -80,7 +110,7 @@ export interface StudioSession {
 }
 
 export function initialSessionView(balance: number): SessionView {
-  return { state: "idle", notice: null, offline: false, remaining: balance, sessionLeft: null, stats: null, liveSince: null };
+  return { state: "idle", notice: null, offline: false, remaining: balance, sessionLeft: null, stats: null, liveSince: null, reconnecting: false, ended: null };
 }
 
 const JSON_HEADERS = { "Content-Type": "application/json" };
@@ -89,7 +119,7 @@ const JSON_HEADERS = { "Content-Type": "application/json" };
 type EndFailure = LucyFailure["code"] | "connect_timeout";
 interface EndCall { id: string; reason: ClientEndReason; failure?: EndFailure }
 /** What the server confirmed when it closed a session. */
-interface Ended { refunded: number }
+interface Ended { refunded: number; billed: number | null }
 const endBody = (e: EndCall) => ({ sessionId: e.id, reason: e.reason, ...(e.failure ? { failure: e.failure } : {}) });
 
 export function createStudioSession(d: SessionDeps): StudioSession {
@@ -108,6 +138,10 @@ export function createStudioSession(d: SessionDeps): StudioSession {
   let pendingEnd: EndCall | null = null; // an end the server hasn't confirmed yet
   let framed: string | null = null;    // the session whose first transformed frame has rendered
   let liveSent: string | null = null;  // the session whose live time the server has confirmed
+  let goLiveAt = 0;                    // when this attempt was asked for (Go live, or the automatic retry): the connect timeout runs from here
+  let retriesLeft = 0;                 // automatic retries left for the current Go live (one, for an ICE failure before the first frame)
+  let lastInputs: StartInputs | null = null;
+  let endedId: string | null = null;   // the session `view.ended` describes
 
   const set = (patch: Partial<SessionView>) => {
     view = { ...view, ...patch };
@@ -128,7 +162,14 @@ export function createStudioSession(d: SessionDeps): StudioSession {
     c?.close();
     lastStats = null;
     d.onRemoteStream(null);
-    set({ stats: null });
+    set({ stats: null, reconnecting: false });
+  }
+
+  /** Session `id` is over (locally): record how long it was live, for the summary and the Ended state. */
+  function markEnded(id: string) {
+    endedId = id;
+    const liveSeconds = framed === id && view.liveSince !== null ? Math.max(0, Math.floor((Date.now() - view.liveSince) / 1000)) : null;
+    set({ ended: { liveSeconds, billed: null, refunded: 0 } });
   }
 
   /**
@@ -141,9 +182,11 @@ export function createStudioSession(d: SessionDeps): StudioSession {
       const r = await d.fetch("/api/studio/session/end", { method: "POST", headers: JSON_HEADERS, body: JSON.stringify(endBody({ id, reason, failure })) });
       if (r.ok || r.status === 404) { // 404: not ours or already gone, nothing left to close
         if (pendingEnd?.id === id) pendingEnd = null;
-        const j = r.ok ? (await r.json().catch(() => null)) as { remaining?: unknown; refunded?: unknown } | null : null;
+        const j = r.ok ? (await r.json().catch(() => null)) as { remaining?: unknown; refunded?: unknown; secondsBilled?: unknown } | null : null;
         if (sid === null && typeof j?.remaining === "number") set({ remaining: j.remaining });
-        return { refunded: typeof j?.refunded === "number" && j.refunded > 0 ? j.refunded : 0 };
+        const out: Ended = { refunded: typeof j?.refunded === "number" && j.refunded > 0 ? j.refunded : 0, billed: typeof j?.secondsBilled === "number" ? j.secondsBilled : null };
+        if (endedId === id && view.ended) set({ ended: { ...view.ended, billed: out.billed, refunded: out.refunded } });
+        return out;
       }
     } catch { /* network */ }
     pendingEnd = { id, reason, failure };
@@ -153,7 +196,11 @@ export function createStudioSession(d: SessionDeps): StudioSession {
   function startTimers() {
     clearTimers();
     tick = setInterval(() => {
-      if (view.liveSince === null) return; // credits count from the first transformed frame, as on the server
+      if (view.liveSince === null) {
+        // Credits count from the first transformed frame, as on the server. Until then, give up after the connect timeout.
+        if (sid && Date.now() - goLiveAt >= CONNECT_TIMEOUT_SECONDS * 1000) void failAttempt(attempt, { code: "connect_timeout", message: `No transformed frame within ${CONNECT_TIMEOUT_SECONDS} s` });
+        return;
+      }
       set({ remaining: Math.max(0, view.remaining - 1), sessionLeft: view.sessionLeft === null ? null : Math.max(0, view.sessionLeft - 1) });
     }, 1000);
     statTimer = setInterval(async () => {
@@ -213,7 +260,7 @@ export function createStudioSession(d: SessionDeps): StudioSession {
     const mine = ++attempt;
     prev?.close();
     lastStats = null;
-    set({ state: "connecting", notice: null, stats: null });
+    set({ state: "connecting", notice: null, stats: null, reconnecting: framed === id }); // renegotiating a live session: Reconnecting
     const stream = d.getStream();
     if (!stream) { void failAttempt(mine, { code: "setup_error", message: "No live camera track" }); return false; }
     let c: LucyConnection;
@@ -223,8 +270,8 @@ export function createStudioSession(d: SessionDeps): StudioSession {
         onRemoteStream: (s) => { if (mine === attempt) d.onRemoteStream(s); },
         onState: (s, detail, failure) => {
           if (mine !== attempt) return; // an attempt we already replaced or tore down
-          if (s === "live") set({ state: "live", notice: null });
-          else if (s === "connecting") set({ state: "connecting", notice: detail ? { tone: "info", text: detail } : null });
+          if (s === "live") set({ state: "live", notice: null, reconnecting: false });
+          else if (s === "connecting") set({ state: "connecting", reconnecting: framed === id, notice: detail ? { tone: "info", text: detail } : null });
           else if (s === "failed") void failAttempt(mine, failure ?? { code: "setup_error", message: detail ?? "Connection failed" });
           // "closed" is only ever the echo of our own close()
         },
@@ -238,20 +285,41 @@ export function createStudioSession(d: SessionDeps): StudioSession {
     return true;
   }
 
-  /** The connection failed: stop the timers, end the server session so credits stop being used, tell the user why. */
-  async function failAttempt(mine: number, f: LucyFailure) {
+  /**
+   * The connection failed (or never showed a frame in time): stop the timers, end the server session so credits stop
+   * being used, tell the user why. An ICE failure before the first frame is retried once, automatically, on a new session.
+   */
+  async function failAttempt(mine: number, f: StudioFailure) {
     if (mine !== attempt) return;
     const id = sid;
     sid = null;
+    const neverLive = !!id && framed !== id;
     teardown();
+    if (id) markEnded(id);
+
+    if (id && neverLive && f.code === "ice_failed" && retriesLeft > 0 && lastInputs) {
+      retriesLeft = 0; // one per Go live: the retry's own failure is shown, never retried
+      const inputs = lastInputs;
+      const myRun = run;
+      const notice: Notice = { tone: "info", text: MESSAGES.autoRetry };
+      set({ state: "connecting", notice });
+      await endServerSession(id, "connection_failed", f.code); // closed as failed_connect, 0 credits
+      if (disposed || run !== myRun || sid || activeRun !== null) return; // the user stopped or started something meanwhile
+      goLiveAt = Date.now(); // the retry gets its own connect timeout
+      await begin(inputs, notice);
+      return;
+    }
+
     const base = describeFailure(f);
-    const notice: Notice = { tone: "error", text: base, retryLabel: "Reconnect", hint: MESSAGES.reconnectHint };
+    const timedOut = f.code === "connect_timeout";
+    const notice: Notice = { tone: "error", text: base, retryLabel: timedOut ? "Try again" : "Reconnect", hint: timedOut ? MESSAGES.tryAgainHint : MESSAGES.reconnectHint };
     set({ state: "failed", notice });
     if (!id) return;
     const ended = await endServerSession(id, "connection_failed", f.code);
     if (view.notice === notice) {
-      const refund = ended?.refunded ? ` ${refundedText(ended.refunded)}` : "";
-      set({ notice: { ...notice, text: `${base} ${ended ? MESSAGES.sessionClosed : MESSAGES.endUnconfirmed}${refund}` } });
+      // A session that never showed a frame is never billed (the server closes it with 0), whether or not this end call got through.
+      const cost = neverLive ? ` ${MESSAGES.nothingCharged}` : ended?.refunded ? ` ${refundedText(ended.refunded)}` : "";
+      set({ notice: { ...notice, text: `${base} ${ended ? MESSAGES.sessionClosed : MESSAGES.endUnconfirmed}${cost}` } });
     }
   }
 
@@ -261,6 +329,7 @@ export function createStudioSession(d: SessionDeps): StudioSession {
     const id = sid;
     sid = null;
     teardown();
+    if (id) markEnded(id);
     set({ state: "idle", notice: why.notice ?? null });
     if (id) {
       const ok = (await endServerSession(id, why.reason ?? "user")) !== null;
@@ -269,8 +338,18 @@ export function createStudioSession(d: SessionDeps): StudioSession {
     }
   }
 
+  /** The user's Go live (or Reconnect / Try again): a new attempt, with its one automatic retry available. */
   async function start(i: StartInputs) {
     if (disposed || activeRun !== null || sid) return; // a start is already running, or a session is open: ignore a double click
+    retriesLeft = 1;
+    lastInputs = i;
+    goLiveAt = Date.now();
+    await begin(i);
+  }
+
+  /** Start a server session and connect. `keep` is a notice to leave on screen meanwhile (the automatic retry's). */
+  async function begin(i: StartInputs, keep: Notice | null = null) {
+    if (disposed || activeRun !== null || sid) return;
     const mine = ++run;
     activeRun = mine;
     const cancelled = () => disposed || mine !== run;
@@ -278,7 +357,7 @@ export function createStudioSession(d: SessionDeps): StudioSession {
       teardown(); // nothing from an earlier attempt may still be running
       if (!d.getStream()) { set({ state: "idle", notice: { tone: "error", text: MESSAGES.noCamera } }); return; }
       if (!d.network.online()) { set({ state: "idle", offline: true }); return; } // the offline banner says why; nothing is sent
-      set({ state: "connecting", notice: null });
+      set({ state: "connecting", notice: keep });
 
       // Read the reference image before the session exists: failing here costs nothing.
       let referenceImageUrl: string | undefined;
@@ -311,8 +390,12 @@ export function createStudioSession(d: SessionDeps): StudioSession {
       }
       if (cancelled()) { void endServerSession(body.sessionId, "user"); return; } // stopped while the server was creating it: don't leave it open
       sid = body.sessionId;
-      set({ remaining: body.remaining ?? view.remaining, sessionLeft: body.maxSeconds ?? null, liveSince: null });
-      if (open(sid, i, referenceImageUrl)) startTimers(); // a connection that failed on the spot has already ended the session
+      endedId = null;
+      set({ remaining: body.remaining ?? view.remaining, sessionLeft: body.maxSeconds ?? null, liveSince: null, ended: null });
+      if (open(sid, i, referenceImageUrl)) {
+        startTimers(); // a connection that failed on the spot has already ended the session
+        if (keep) set({ notice: keep }); // open() clears the notice; the retry's stays until something replaces it
+      }
     } finally {
       if (activeRun === mine) activeRun = null;
     }

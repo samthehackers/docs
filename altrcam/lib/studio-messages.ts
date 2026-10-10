@@ -4,6 +4,7 @@
  */
 import type { LucyFailure } from "@/lib/fal/signaling";
 import { CREDITS_RULE } from "@/lib/availability";
+import { CONNECT_TIMEOUT_SECONDS } from "@/lib/plans";
 
 /**
  * The two standing notes under the preview. Change them here.
@@ -28,6 +29,9 @@ export const MESSAGES = {
   sessionLimit: "Session limit reached for your plan.",
   sessionEnded: "Session ended.",
   neverConnected: "The transformed video didn't start in time, so the session was closed. Nothing was charged.",
+  nothingCharged: "Nothing was charged.",
+  tryAgainHint: "Try again starts a new session. Credits count only once its transformed video is live.",
+  autoRetry: "The video connection couldn't be set up, so we're trying once more with a new session. Nothing is charged until the video shows.",
   unreadableStart: "The server's reply to starting a session was unreadable. Try again.",
 } as const;
 
@@ -64,9 +68,14 @@ export function describeStartFailure(r: StartResult): StartProblem {
 
 // ---------- a connection that failed ----------
 
+/** A failed attempt: the connection's own failure, or the Studio's connect timeout (no transformed frame in time). */
+export type StudioFailure = LucyFailure | { code: "connect_timeout"; message: string; status?: undefined };
+
 /** Plain-language reason for a failed connection attempt. `f.message` stays technical and is not shown here, except for the service's own error text. */
-export function describeFailure(f: LucyFailure): string {
+export function describeFailure(f: StudioFailure): string {
   switch (f.code) {
+    case "connect_timeout":
+      return `The transformed video didn't start within ${CONNECT_TIMEOUT_SECONDS} seconds.`;
     case "token_refused":
       if (f.status === 401) return "You've been signed out, so the server wouldn't allow the video connection. Reload the page and sign in again.";
       if (f.status === 403) return "The server wouldn't allow the video connection because this session is no longer open.";

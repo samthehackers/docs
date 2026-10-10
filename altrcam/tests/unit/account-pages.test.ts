@@ -31,6 +31,7 @@ import { DEFAULT_PLANS } from "@/lib/plans";
 import Dashboard from "@/app/(app)/dashboard/page";
 import Support from "@/app/(app)/support/page";
 import History from "@/app/(app)/history/page";
+import { PHASE_LABELS } from "@/lib/studio-session";
 
 let d: DB;
 beforeAll(async () => { d = await testDb(); h.db = d; }, 60_000);
@@ -292,7 +293,8 @@ describe("/support", () => {
     expect(t).toMatch(/VPN/);
     expect(t).toMatch(/firewall/i);
     expect(t).toContain("Connecting");
-    expect(t).toMatch(/Failed or Closed/);
+    for (const label of Object.values(PHASE_LABELS)) expect(t).toContain(`${label}:`); // every status word the Studio shows is explained
+    expect(t).not.toMatch(/Failed or Closed/);
     // credits
     expect(t).toContain("1 credit = 1 second");
     expect(t).toMatch(/monthly credits/i);
@@ -325,7 +327,7 @@ describe("/support", () => {
   });
   it("promises no response time and no refund, and does not claim the live connection is verified", async () => {
     const t = text(await page());
-    expect(t).not.toMatch(/within \d|\d+ ?(hours?|business days?)|24\/7|guarantee|instantly|always works|fully refund/i);
+    expect(t).not.toMatch(/(respond|reply|answer you) within|within \d+ ?(hours?|days?|business days?)|\d+ ?(hours?|business days?)|24\/7|guarantee|instantly|always works|fully refund/i);
     expect(t).toMatch(/may be on our side/);
   });
 });

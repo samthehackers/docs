@@ -7,7 +7,7 @@
 import Link from "next/link";
 import { fmtSessionLimit } from "@/lib/account-summary";
 import { CREDITS_RULE, EARLY_DROP_REFUND } from "@/lib/availability";
-import { HEARTBEAT_SECONDS, NEVER_LIVE_LIMIT, NEVER_LIVE_WINDOW_SECONDS, STALE_AFTER_SECONDS, type Plan, type PlanConfig } from "@/lib/plans";
+import { CONNECT_TIMEOUT_SECONDS, HEARTBEAT_SECONDS, NEVER_LIVE_LIMIT, NEVER_LIVE_WINDOW_SECONDS, STALE_AFTER_SECONDS, type Plan, type PlanConfig } from "@/lib/plans";
 import { fmtNum } from "@/lib/utils";
 
 export interface TroubleshootingItem { id: string; title: string; body: React.ReactNode }
@@ -44,9 +44,10 @@ export function troubleshootingItems(plans: Record<Plan, PlanConfig>): Troublesh
           <p className="mt-2">What the status badge means:</p>
           <Ul>
             <li><b>Ready:</b> your camera is open and nothing is being sent yet.</li>
-            <li><b>Connecting:</b> a session has started and the Studio is waiting for the AI service to answer. It also shows if a live connection is interrupted while the browser tries to recover it.</li>
-            <li><b>Live:</b> the transformed video is coming back.</li>
-            <li><b>Failed or Closed:</b> the connection could not be made, broke, or was shut down. When the Studio has a reason it appears next to the badge, so quote it in a ticket.</li>
+            <li><b>Connecting:</b> a session has started and the Studio is waiting for the transformed video. Nothing is charged yet. If no video shows within {CONNECT_TIMEOUT_SECONDS} seconds the Studio stops and offers Try again. If the direct video connection can&apos;t be set up, it tries once more on its own with a new session.</li>
+            <li><b>Live:</b> the transformed video is on screen, and credits are counting.</li>
+            <li><b>Reconnecting:</b> a live connection was interrupted and the browser is trying to recover it, or Apply changes is restarting it. It is still the same session, so credits keep counting.</li>
+            <li><b>Ended:</b> the session is over, because you stopped it or because the connection could not be made or broke. When the Studio has a reason it appears above the controls, so quote it in a ticket.</li>
           </Ul>
           <p className="mt-2">Things to try, in order:</p>
           <Ul>

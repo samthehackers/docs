@@ -10,7 +10,7 @@ import { readUrl, uploadFile } from "@/lib/client-upload";
 import { CAPTURE_SIZE, HEARTBEAT_SECONDS } from "@/lib/plans";
 import { createCamera, EMPTY_CAMERA_VIEW, type Camera as CameraController, type CameraView } from "@/lib/studio-camera";
 import { watchFirstFrame } from "@/lib/first-frame";
-import { browserNetwork, createStudioSession, initialSessionView, type SessionView, type StartInputs, type StudioSession } from "@/lib/studio-session";
+import { browserNetwork, createStudioSession, initialSessionView, PHASE_LABELS, sessionPhase, type SessionView, type StartInputs, type StudioSession } from "@/lib/studio-session";
 import { MESSAGES, STUDIO_NOTICES } from "@/lib/studio-messages";
 import { cn } from "@/lib/utils";
 
@@ -54,6 +54,7 @@ export function Studio(p: StudioProps) {
 
   const live = sess.state === "live" || sess.state === "connecting";
   const failed = sess.state === "failed";
+  const phase = sessionPhase(sess);
   const inputs = (): StartInputs => ({ prompt, expand, kind, referencePath: refPath });
 
   const flash = (m: string) => {
@@ -165,9 +166,9 @@ export function Studio(p: StudioProps) {
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
-          <span className={cn("inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs", sess.state === "live" ? "border-green-500/50 text-green-400" : failed ? "border-destructive/50 text-destructive" : "text-muted-foreground")} role="status">
-            <span className={cn("h-2 w-2 rounded-full", sess.state === "live" ? "bg-green-400" : sess.state === "connecting" ? "animate-pulse bg-yellow-400" : failed ? "bg-destructive" : "bg-muted-foreground")} />
-            {sess.state === "idle" ? "Ready" : sess.state === "connecting" ? "Connecting" : sess.state === "live" ? "Live" : failed ? "Failed" : "Closed"}
+          <span className={cn("inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs", phase === "live" ? "border-green-500/50 text-green-400" : failed ? "border-destructive/50 text-destructive" : "text-muted-foreground")} role="status" data-testid="session-phase">
+            <span className={cn("h-2 w-2 rounded-full", phase === "live" ? "bg-green-400" : phase === "connecting" || phase === "reconnecting" ? "animate-pulse bg-yellow-400" : failed ? "bg-destructive" : "bg-muted-foreground")} />
+            {PHASE_LABELS[phase]}
           </span>
         </div>
         <div className="text-right" aria-live="polite">
@@ -195,7 +196,7 @@ export function Studio(p: StudioProps) {
         </figure>
         <figure className="relative overflow-hidden rounded-lg border bg-black">
           <video ref={outRef} autoPlay playsInline className="aspect-video w-full object-cover" aria-label="AI transformed output" />
-          {sess.state !== "live" && <div className="absolute inset-0 grid place-items-center text-sm text-muted-foreground">{sess.state === "connecting" ? <Loader2 className="h-6 w-6 animate-spin" aria-label="Connecting" /> : failed ? "Not connected" : "Your transformation appears here"}</div>}
+          {phase !== "live" && <div className="absolute inset-0 grid place-items-center text-sm text-muted-foreground">{phase === "connecting" || phase === "reconnecting" ? <Loader2 className="h-6 w-6 animate-spin" aria-label={PHASE_LABELS[phase]} /> : failed ? "Not connected" : "Your transformation appears here"}</div>}
           <figcaption className="px-3 py-2 text-xs text-muted-foreground">AltrCam</figcaption>
         </figure>
       </div>

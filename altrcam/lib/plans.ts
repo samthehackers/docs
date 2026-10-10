@@ -79,6 +79,8 @@ export const STALE_AFTER_SECONDS = 30;
  * refused, and the fal proxy stops minting connection tokens for it.
  */
 export const CONNECT_GRACE_SECONDS = 30;
+/** The Studio gives up on a Go live that shows no transformed frame within this long (before the server's 30 s). */
+export const CONNECT_TIMEOUT_SECONDS = 15;
 /**
  * Never-connected cooldown. "Live" is reported by the browser, so a tampered client could stream without reporting it and
  * pay nothing. Each such attempt only gets connection tokens for CONNECT_GRACE_SECONDS, and Go live is refused (429)

@@ -7,7 +7,8 @@
  * What this does NOT prove: that the real routes, the real fal service or a real browser behave like these fakes.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { browserNetwork, createStudioSession, type SessionDeps, type SessionView, type StartInputs } from "@/lib/studio-session";
+import { browserNetwork, createStudioSession, PHASE_LABELS, sessionPhase, type SessionDeps, type SessionView, type StartInputs } from "@/lib/studio-session";
+import { CONNECT_TIMEOUT_SECONDS } from "@/lib/plans";
 import type { ConnectOptions, ConnState, LucyConnection, LucyFailure } from "@/lib/fal/signaling";
 import { MESSAGES, refundedText } from "@/lib/studio-messages";
 
@@ -236,6 +237,152 @@ describe("going live is the first transformed frame (fair billing)", () => {
   });
 });
 
+describe("connection states, the connect timeout and the one automatic retry (A2.4)", () => {
+  const ICE: LucyFailure = { code: "ice_failed", message: "Connection failed" };
+  const phase = (t: ReturnType<typeof setup>) => PHASE_LABELS[sessionPhase(t.s.view())];
+
+  it("shows Ready → Connecting → Live → Reconnecting → Live → Ended, Live only once a frame is on screen", async () => {
+    const t = setup();
+    expect(phase(t)).toBe("Ready");
+    await t.s.start(INPUTS);
+    expect(phase(t)).toBe("Connecting");
+    t.conns[0].emit("live");
+    expect(phase(t)).toBe("Connecting"); // connected, nothing shown or billed yet
+    t.s.firstFrame();
+    expect(phase(t)).toBe("Live");
+    t.conns[0].emit("connecting", "Reconnecting…");
+    expect(phase(t)).toBe("Reconnecting");
+    t.conns[0].emit("live");
+    expect(phase(t)).toBe("Live");
+    await t.s.applyChanges(INPUTS);
+    expect(phase(t)).toBe("Reconnecting"); // renegotiating the same, already billed session
+    t.conns[1].emit("live");
+    await t.s.stop();
+    expect(phase(t)).toBe("Ended");
+    await t.s.start(INPUTS);
+    expect(phase(t)).toBe("Connecting");
+  });
+
+  it("a failure is Ended too, with its reason; a start refused before any session is still Ready", async () => {
+    const t = setup();
+    await t.s.start(INPUTS);
+    t.conns[0].emit("failed", TIMEOUT.message, TIMEOUT);
+    await tick(0);
+    expect(phase(t)).toBe("Ended");
+    expect(t.s.view().notice?.text).toContain("didn't answer");
+    const u = setup({ routes: { [START]: () => json(402, { error: "Out of credits" }) } });
+    await u.s.start(INPUTS);
+    expect(phase(u)).toBe("Ready");
+  });
+
+  it(`gives up when no transformed frame shows within ${CONNECT_TIMEOUT_SECONDS} s of Go live: Try again, nothing charged, no retry`, async () => {
+    const t = setup();
+    await t.s.start(INPUTS);
+    t.conns[0].emit("live"); // connected but never shows a frame
+    await tick(CONNECT_TIMEOUT_SECONDS * 1000 - 1000);
+    expect(t.s.view().state).toBe("live");
+    await tick(1000);
+    const v = t.s.view();
+    expect(v.state).toBe("failed");
+    expect(v.notice).toMatchObject({ tone: "error", retryLabel: "Try again", hint: MESSAGES.tryAgainHint });
+    expect(v.notice?.text).toBe(`The transformed video didn't start within ${CONNECT_TIMEOUT_SECONDS} seconds. The session was closed. Nothing was charged.`);
+    expect(t.ends()).toEqual([{ sessionId: "s1", reason: "connection_failed", failure: "connect_timeout" }]);
+    expect(vi.getTimerCount()).toBe(0);
+    await tick(10 * 60_000);
+    expect(t.to(START)).toHaveLength(1);
+  });
+
+  it("the connect timeout does not fire once a frame has rendered", async () => {
+    const t = setup();
+    await t.s.start(INPUTS);
+    t.conns[0].emit("live");
+    await tick(5000);
+    t.s.firstFrame();
+    await tick(60_000);
+    expect(t.s.view().state).toBe("live");
+    expect(t.ends()).toHaveLength(0);
+  });
+
+  it("an ICE failure before the first frame is retried ONCE, on a fresh session, after ending the failed one", async () => {
+    const t = setup();
+    await t.s.start(INPUTS);
+    t.conns[0].emit("failed", ICE.message, ICE);
+    await tick(0);
+    expect(t.ends()).toEqual([{ sessionId: "s1", reason: "connection_failed", failure: "ice_failed" }]);
+    expect(t.to(START)).toHaveLength(2);
+    expect(t.conns).toHaveLength(2);
+    expect(t.conns[1].opts.sessionId).toBe("s2");
+    expect(t.s.view()).toMatchObject({ state: "connecting", notice: { tone: "info", text: MESSAGES.autoRetry } });
+    expect(vi.getTimerCount()).toBe(3);
+    // The retry fails the same way: shown, never retried again.
+    t.conns[1].emit("failed", ICE.message, ICE);
+    await tick(0);
+    expect(t.s.view()).toMatchObject({ state: "failed", notice: { retryLabel: "Reconnect" } });
+    expect(t.s.view().notice?.text).toMatch(/VPN, firewall.*Nothing was charged\.$/);
+    expect(t.ends().map((e) => e.sessionId)).toEqual(["s1", "s2"]);
+    await tick(10 * 60_000);
+    expect(t.to(START)).toHaveLength(2);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("the retry that works goes live normally, with its own connect timeout", async () => {
+    const t = setup();
+    await t.s.start(INPUTS);
+    await tick(10_000);
+    t.conns[0].emit("failed", ICE.message, ICE);
+    await tick(0);
+    await tick(10_000); // 20 s after Go live, but only 10 s into the retry
+    expect(t.s.view().state).toBe("connecting");
+    t.conns[1].emit("live");
+    t.s.firstFrame();
+    expect(t.s.view().notice).toBeNull();
+    expect(t.to(LIVE).map((c) => c.body.sessionId)).toEqual(["s2"]);
+  });
+
+  it("no automatic retry for an ICE failure after the video was live, or for any other failure", async () => {
+    const t = setup();
+    await t.s.start(INPUTS);
+    t.conns[0].emit("live");
+    t.s.firstFrame();
+    t.conns[0].emit("failed", ICE.message, ICE);
+    await tick(0);
+    expect(t.to(START)).toHaveLength(1);
+    expect(t.s.view().state).toBe("failed");
+    for (const f of [TIMEOUT, { code: "socket_error", message: "x" }, { code: "model_error", message: "x" }] as LucyFailure[]) {
+      const u = setup();
+      await u.s.start(INPUTS);
+      u.conns[0].emit("failed", f.message, f);
+      await tick(0);
+      expect(u.to(START)).toHaveLength(1);
+    }
+  });
+
+  it("a Stop while the failed session is being ended cancels the retry", async () => {
+    let release!: (r: Response) => void;
+    const t = setup({ routes: { [END]: () => new Promise<Response>((r) => { release = r; }) } });
+    await t.s.start(INPUTS);
+    t.conns[0].emit("failed", ICE.message, ICE);
+    await tick(0);
+    await t.s.stop();
+    release(json(200, { remaining: 300, secondsBilled: 0, refunded: 0 }));
+    await tick(0);
+    expect(t.to(START)).toHaveLength(1);
+    expect(t.s.view().state).toBe("idle");
+  });
+
+  it("each Go live (or Try again) the user asks for has its own one retry", async () => {
+    const t = setup();
+    await t.s.start(INPUTS);
+    t.conns[0].emit("failed", ICE.message, ICE); await tick(0);
+    t.conns[1].emit("failed", ICE.message, ICE); await tick(0);
+    await t.s.reconnect(INPUTS);
+    t.conns[2].emit("failed", ICE.message, ICE); await tick(0);
+    expect(t.to(START)).toHaveLength(4);
+    t.conns[3].emit("failed", ICE.message, ICE); await tick(0);
+    expect(t.to(START)).toHaveLength(4);
+  });
+});
+
 describe("a connection that fails must not keep billing (item 1)", () => {
   it("ends the server session as connection_failed, stops all three timers and keeps the reason on screen", async () => {
     const t = setup();
@@ -307,6 +454,10 @@ describe("a connection that fails must not keep billing (item 1)", () => {
     await t.s.start(INPUTS);
     t.conns[0].emit("failed", failure.message, failure);
     await tick(0);
+    if (failure.code === "ice_failed") { // retried once automatically first; the retry's failure is the one explained
+      t.conns[1].emit("failed", failure.message, failure);
+      await tick(0);
+    }
     expect(t.s.view().notice?.text).toMatch(text);
     expect(t.s.view().notice?.text).not.toMatch(/Timed out|undefined/); // technical text and holes stay out of the headline
   });
@@ -464,7 +615,7 @@ describe("Reconnect (item 5)", () => {
     t.conns[0].emit("failed", TIMEOUT.message, TIMEOUT);
     await tick(0);
     await t.s.reconnect(INPUTS);
-    t.conns[1].emit("failed", "again", { code: "ice_failed", message: "again" });
+    t.conns[1].emit("failed", "again", { code: "connection_lost", message: "again" });
     await tick(0);
     expect(t.s.view().state).toBe("failed");
     expect(t.ends().map((e) => e.sessionId)).toEqual(["s1", "s2"]);
@@ -631,6 +782,7 @@ describe("heartbeats", () => {
     const u = setup({ routes: { [BEAT]: () => { if (down) throw new TypeError("Failed to fetch"); return json(200, { remaining: 250, continue: true, secondsLeftInSession: 100 }); } } });
     await u.s.start(INPUTS);
     u.conns[0].emit("live");
+    u.s.firstFrame();
     await tick(10_000);
     expect(u.s.view().state).toBe("live");
     down = false;

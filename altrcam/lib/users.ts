@@ -6,7 +6,7 @@ import { grantCredits } from "@/lib/credits";
 import { getPlan } from "@/lib/plan-config";
 import { deleteUserFiles } from "@/lib/storage";
 import { getProvider } from "@/lib/payments";
-import { clerkClient } from "@clerk/nextjs/server";
+import { createAdminClient, supabaseAdminConfig } from "@/lib/supabase/admin";
 import { purgeReferrals } from "@/lib/referrals";
 
 export interface ProfileInput { id: string; email: string; name: string; avatarUrl?: string | null }
@@ -30,9 +30,9 @@ export async function syncProfile(p: ProfileInput, d: DB = db()) {
 
 /**
  * Account deletion: cancel subscriptions → delete Storage files → anonymise payments (kept for accounting)
- * → hard-delete everything else → optionally delete the Clerk user.
+ * → hard-delete everything else → optionally delete the Supabase Auth user (service key, server only).
  */
-export async function deleteAccount(userId: string, opts: { deleteClerk: boolean }) {
+export async function deleteAccount(userId: string, opts: { deleteAuthUser: boolean }) {
   const d = db();
   const subs = await d.select().from(subscriptions).where(eq(subscriptions.userId, userId));
   for (const s of subs) {
@@ -57,9 +57,19 @@ export async function deleteAccount(userId: string, opts: { deleteClerk: boolean
     await tx.delete(subscriptions).where(eq(subscriptions.userId, userId));
     await tx.delete(users).where(eq(users.id, userId));
   });
-  if (opts.deleteClerk) {
-    try { await (await clerkClient()).users.deleteUser(userId); } catch (e) { console.error("[delete] clerk", e); }
-  }
+  if (opts.deleteAuthUser) await deleteAuthUser(userId);
+}
+
+/**
+ * Removes the login itself, so the person cannot sign back in to an empty account. Needs the secret key; without it the
+ * data is still gone and the next sign-in only re-provisions an empty Free account, so this logs instead of failing.
+ */
+export async function deleteAuthUser(userId: string) {
+  if (!supabaseAdminConfig()) { console.error("[delete] auth user not deleted: SUPABASE_SECRET_KEY / SUPABASE_SERVICE_ROLE_KEY not set"); return; }
+  try {
+    const { error } = await createAdminClient().auth.admin.deleteUser(userId);
+    if (error) console.error("[delete] auth user", error.message);
+  } catch (e) { console.error("[delete] auth user", e); }
 }
 
 export async function getUserRow(userId: string, d: DB = db()) {
@@ -67,7 +77,7 @@ export async function getUserRow(userId: string, d: DB = db()) {
   return u && !u.deletedAt ? u : null;
 }
 
-/** Row for the signed-in user; self-heals if the Clerk webhook has not landed yet. */
+/** Row for the signed-in user, created on first visit (there is no sign-up webhook: the first app page provisions it). */
 export async function ensureUserRow(userId: string, profile: () => Promise<ProfileInput>) {
   const existing = await getUserRow(userId);
   if (existing) return existing;

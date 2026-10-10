@@ -1,5 +1,5 @@
 import type { NextRequest } from "next/server";
-import { auth } from "@clerk/nextjs/server";
+import { HttpError, requireUserId } from "@/lib/api";
 import { createRouteHandler } from "@fal-ai/server-proxy/nextjs";
 import { activeSession } from "@/lib/metering";
 import { FAL_APP_ALIASES } from "@/lib/fal/config";
@@ -18,8 +18,9 @@ const inner = createRouteHandler({
 const deny = (status: number, msg: string) => Response.json({ error: msg }, { status });
 
 async function guard(req: NextRequest) {
-  const { userId } = await auth();
-  if (!userId) return deny(401, "Unauthorized");
+  let userId: string;
+  try { userId = await requireUserId(); } // Supabase session from the request cookies, verified with the Auth server
+  catch (e) { if (e instanceof HttpError) return deny(e.status, e.message); throw e; }
   if (req.method !== "POST") return deny(405, "Method not allowed");
 
   const sessionId = req.headers.get("x-altrcam-session");

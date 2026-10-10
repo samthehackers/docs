@@ -67,8 +67,13 @@ export function billingDetails({ currency, yearlyPrice, pricesApproved }: { curr
   ];
 }
 
-/** Shown where sign-up is not open (no sign-in or no database configured): says so instead of selling it. */
-export const SIGNUP_CLOSED = "Sign-up isn't open on this deployment yet.";
+/**
+ * Shown where sign-up is not open (accountsOpen() in lib/config.ts is false: SIGNUPS_OPEN is not "true", or Clerk or the database
+ * is missing): says so instead of selling it, and offers the one thing a visitor can do, which is ask to hear when it opens.
+ * The sentence and the link are rendered together by <SignupClosedNotice> (components/signup-closed.tsx).
+ */
+export const SIGNUP_CLOSED = "Sign-up isn't open yet.";
+export const SIGNUP_CLOSED_LINK = { label: "Email us to hear when it opens", href: "/contact" } as const;
 
 /**
  * The free-credits promise on the landing page. null when the Free plan grants nothing (an admin can set 0). "Every month" is only

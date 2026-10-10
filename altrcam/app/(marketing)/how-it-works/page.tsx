@@ -1,8 +1,8 @@
 import { AvailabilityNotice } from "@/components/availability-notice";
 import { HowItWorksSteps } from "@/components/how-it-works-steps";
+import { SignupClosedNotice } from "@/components/signup-closed";
 import { StudioCta } from "@/components/studio-cta";
 import { accountsOpen } from "@/lib/config";
-import { SIGNUP_CLOSED } from "@/lib/public-copy";
 import { viewerId } from "@/lib/viewer";
 
 export const metadata = { title: "How it works" };
@@ -18,7 +18,7 @@ export default async function HowItWorks() {
       <div className="mt-12"><HowItWorksSteps headingLevel={2} /></div>
       <div className="mt-12 text-center">
         <StudioCta signedIn={signedIn} accountsOpen={open} />
-        {!signedIn && !open && <p role="status" className="text-sm text-muted-foreground">{SIGNUP_CLOSED}</p>}
+        {!signedIn && !open && <SignupClosedNotice />}
       </div>
     </div>
   );

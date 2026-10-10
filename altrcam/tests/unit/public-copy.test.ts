@@ -3,7 +3,7 @@
  * and the one place the live-video status is written down.
  */
 import { describe, expect, it } from "vitest";
-import { billingDetails, clipPlanLabels, freeCreditsLine, joinList, PAYMENT_METHODS_TEXT, planFeatures, savingSentence, SIGNUP_CLOSED } from "@/lib/public-copy";
+import { billingDetails, clipPlanLabels, freeCreditsLine, joinList, PAYMENT_METHODS_TEXT, planFeatures, savingSentence, SIGNUP_CLOSED, SIGNUP_CLOSED_LINK } from "@/lib/public-copy";
 import { CAPTURE_SIZE, DEFAULT_PLANS, type Plan, type PlanConfig } from "@/lib/plans";
 import { LIVE_AVAILABILITY } from "@/lib/availability";
 
@@ -140,7 +140,8 @@ describe("the free-credits line", () => {
     expect(freeCreditsLine(1500, true)).toBe("1,500 free credits every month. No card needed.");
   });
   it("the closed-sign-up sentence is the one the pages and the tests agree on", () => {
-    expect(SIGNUP_CLOSED).toBe("Sign-up isn't open on this deployment yet.");
+    expect(SIGNUP_CLOSED).toBe("Sign-up isn't open yet.");
+    expect(SIGNUP_CLOSED_LINK).toEqual({ label: "Email us to hear when it opens", href: "/contact" });
   });
 });
 

@@ -34,6 +34,7 @@ import SignInPage from "@/app/(auth)/sign-in/[[...sign-in]]/page";
 import { StudioCta } from "@/components/studio-cta";
 import { DEFAULT_PLANS } from "@/lib/plans";
 import { PAYMENT_METHODS_TEXT, SIGNUP_CLOSED } from "@/lib/public-copy";
+import { START_FREE } from "@/components/studio-cta";
 import { HOW_IT_WORKS_STEPS } from "@/components/how-it-works-steps";
 import { LIVE_AVAILABILITY } from "@/lib/availability";
 import { viewerId } from "@/lib/viewer";
@@ -155,8 +156,14 @@ describe("where the studio buttons go", () => {
       expect(hrefs(s)).not.toContain("/studio");
       expect(plain(s)).not.toContain("Open the studio");
     }
-    expect(plain(await landing())).toContain("Sign up to open the studio");
-    expect(plain(await landing())).toContain("Try it free");
+    // The hero and the bottom card on the landing page, and the one on how-it-works, all say the same thing.
+    expect(count(plain(await landing()), START_FREE)).toBe(2);
+    expect(count(plain(await how()), START_FREE)).toBe(1);
+    expect(START_FREE).toBe("Start free — no card");
+    for (const render of [landing, how]) {
+      const s = await render();
+      for (const m of s.matchAll(/<a\b([^>]*)>Start free — no card<\/a>/g)) expect(m[1]).toContain('href="/sign-up"');
+    }
   });
   it("signed in: the buttons say 'Open the studio' and go to /studio, and the sign-up pitch is gone", async () => {
     h.me = "user_1";
@@ -165,7 +172,7 @@ describe("where the studio buttons go", () => {
       expect(hrefs(s)).toContain("/studio");
       expect(hrefs(s)).not.toContain("/sign-up");
       expect(plain(s)).toContain("Open the studio");
-      expect(plain(s)).not.toContain("Try it free");
+      expect(plain(s)).not.toContain(START_FREE);
     }
     expect(plain(await landing())).not.toContain("free credits every month");
   });
@@ -175,8 +182,8 @@ describe("where the studio buttons go", () => {
     for (const render of [landing, how]) {
       const s = await render();
       expect(hrefs(s)).not.toContain("/sign-up");
-      expect(plain(s)).toContain("Sign-up isn't open on this deployment yet.");
-      expect(plain(s)).not.toMatch(/Try it free|Sign up to open the studio/);
+      expect(plain(s)).toContain(SIGNUP_CLOSED);
+      expect(plain(s)).not.toMatch(/Start free/);
     }
     expect(h.authCalls).toBe(0);
   });
@@ -358,14 +365,14 @@ describe("what the pages promise when accounts are not open (the live deployment
   it("without a database the landing page says sign-up isn't open instead of promising free credits", async () => {
     delete process.env.DATABASE_URL;
     const t = plain(await landing());
-    expect(t).toContain("Sign-up isn't open on this deployment yet.");
+    expect(t).toContain(SIGNUP_CLOSED);
     expect(t).not.toMatch(/free credits every month/);
     expect(t).not.toMatch(/create an account/i);
   });
   it("without Clerk keys it says the same", async () => {
     delete process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY; delete process.env.CLERK_SECRET_KEY;
     const t = plain(await landing());
-    expect(t).toContain("Sign-up isn't open on this deployment yet.");
+    expect(t).toContain(SIGNUP_CLOSED);
     expect(t).not.toMatch(/free credits every month/);
   });
   it("with Clerk and a database it promises the free credits, from the plan config", async () => {
@@ -460,7 +467,8 @@ describe("one answer to 'is sign-up open', everywhere (review of the account-cla
         for (const s of [l, hw]) expect(plain(s)).not.toContain(SIGNUP_CLOSED);
       } else {
         expect(plain(su)).not.toContain("CLERK_SIGNUP_FORM");
-        expect(plain(su)).toContain("Accounts aren't available on this deployment yet");
+        expect(plain(su)).toContain(SIGNUP_CLOSED);
+        expect(hrefs(su)).toContain("/contact");
         for (const s of [l, hw]) { expect(hrefs(s)).not.toContain("/sign-up"); expect(plain(s)).toContain(SIGNUP_CLOSED); }
         expect(hrefs(hd)).not.toContain("/sign-up");
         expect(plain(hd)).not.toMatch(/Get started/);
@@ -473,7 +481,8 @@ describe("one answer to 'is sign-up open', everywhere (review of the account-cla
         expect(hrefs(hd)).toContain("/sign-in");
       } else {
         expect(plain(si)).not.toContain("CLERK_SIGNIN_FORM");
-        expect(plain(si)).toContain("Accounts aren't available on this deployment yet");
+        expect(plain(si)).toContain(SIGNUP_CLOSED);
+        expect(hrefs(si)).toContain("/contact");
         expect(hrefs(hd)).not.toContain("/sign-in");
         expect(plain(hd)).not.toMatch(/Sign in/);
       }
@@ -481,15 +490,21 @@ describe("one answer to 'is sign-up open', everywhere (review of the account-cla
   }
   it("partial Clerk configuration (one key) counts as not configured, on the landing page and the auth pages", async () => {
     delete process.env.CLERK_SECRET_KEY;
-    expect(plain(await landing())).toContain("Sign-up isn't open on this deployment yet.");
-    expect(plain(html((await SignUpPage()) as ReactElement))).toContain("Accounts aren't available");
+    expect(plain(await landing())).toContain(SIGNUP_CLOSED);
+    expect(plain(html((await SignUpPage()) as ReactElement))).toContain(SIGNUP_CLOSED);
     process.env.CLERK_SECRET_KEY = "sk_test_x"; delete process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY;
-    expect(plain(await landing())).toContain("Sign-up isn't open on this deployment yet.");
+    expect(plain(await landing())).toContain(SIGNUP_CLOSED);
   });
   it("the closed notices are announced as status messages", async () => {
     delete process.env.DATABASE_URL;
-    expect(await landing()).toMatch(/<p role="status"[^>]*>Sign-up isn&#x27;t open on this deployment yet\.<\/p>/);
-    expect(await how()).toMatch(/<p role="status"[^>]*>Sign-up isn&#x27;t open on this deployment yet\.<\/p>/);
+    // "Sign-up isn't open yet. Email us to hear when it opens" (a link to /contact), as one status message, wherever it shows.
+    const notice = /<p role="status"[^>]*>Sign-up isn&#x27;t open yet\. <a [^>]*href="\/contact"[^>]*>Email us to hear when it opens<\/a><\/p>/;
+    const notice2 = /<p role="status"[^>]*>Sign-up isn&#x27;t open yet\. <a [^>]*href="\/contact"[^>]*>Email us to hear when it opens<\/a><\/p>/g;
+    expect((await landing()).match(notice2)).toHaveLength(2); // the hero and the bottom card
+    expect(await how()).toMatch(notice);
+    expect(html((await SignUpPage()) as ReactElement)).toMatch(notice);
+    expect(html((await SignInPage()) as ReactElement)).toMatch(notice);
+    expect(plain(await landing())).not.toMatch(/on this deployment yet|check back soon/);
   });
   it("StudioCta: a signed-out visitor gets no button when accounts are closed; a signed-in one always gets the studio", () => {
     expect(StudioCta({ signedIn: false, accountsOpen: false })).toBeNull();

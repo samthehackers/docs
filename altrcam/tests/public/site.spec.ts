@@ -134,7 +134,8 @@ test.describe("content honesty", () => {
   });
   test("with no accounts configured the landing page says sign-up isn't open instead of promising free credits", async ({ page }) => {
     await page.goto("/");
-    await expect(page.locator("main")).toContainText("Sign-up isn't open on this deployment yet.");
+    await expect(page.locator("main")).toContainText("Sign-up isn't open yet. Email us to hear when it opens");
+    await expect(page.locator("main").getByRole("link", { name: "Email us to hear when it opens" }).first()).toHaveAttribute("href", "/contact");
     await expect(page.locator("main")).not.toContainText(/free credits every month|create an account/i);
   });
   test("with no accounts configured there is no sign-up button anywhere, and nothing links straight to the studio", async ({ page }) => {
@@ -148,10 +149,10 @@ test.describe("content honesty", () => {
     await expect(page.locator("main")).toContainText("Not available yet");
     await expect(page.locator("main a[href='/billing']")).toHaveCount(0);
   });
-  test("the sign-up and sign-in pages say accounts aren't available, the same as the pages that link to them", async ({ page }) => {
+  test("the sign-up and sign-in pages say sign-up isn't open, the same as the pages that link to them", async ({ page }) => {
     for (const p of ["/sign-up", "/sign-in"]) {
       await page.goto(p);
-      await expect(page.getByRole("status")).toContainText("Accounts aren't available on this deployment yet");
+      await expect(page.getByRole("status")).toContainText("Sign-up isn't open yet. Email us to hear when it opens");
     }
   });
   test("the auth pages lead back home and to Privacy; the sign-up page's heading is there even while closed", async ({ page }) => {

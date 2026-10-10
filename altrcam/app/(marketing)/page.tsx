@@ -2,12 +2,13 @@ import Link from "next/link";
 import { Sparkles, Shirt, ImageIcon, Wand2, Zap, ShieldCheck } from "lucide-react";
 import { AvailabilityNotice } from "@/components/availability-notice";
 import { HowItWorksSteps } from "@/components/how-it-works-steps";
+import { SignupClosedNotice } from "@/components/signup-closed";
 import { StudioCta } from "@/components/studio-cta";
 import { buttonClass } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { accountsOpen as accountsAreOpen, capabilities } from "@/lib/config";
 import { getPlans } from "@/lib/plan-config";
-import { freeCreditsLine, savingSentence, SIGNUP_CLOSED } from "@/lib/public-copy";
+import { freeCreditsLine, savingSentence } from "@/lib/public-copy";
 import { viewerId } from "@/lib/viewer";
 
 export const metadata = { title: { absolute: "AltrCam — Be anyone. Live." } };
@@ -46,7 +47,7 @@ export default async function Landing() {
           </div>
           {!signedIn && (accountsOpen
             ? freeLine && <p className="mt-4 text-sm text-muted-foreground">{freeLine}</p>
-            : <p role="status" className="mt-4 text-sm text-muted-foreground">{SIGNUP_CLOSED}</p>)}
+            : <SignupClosedNotice className="mt-4" />)}
           <AvailabilityNotice className="mt-8" />
         </div>
       </section>
@@ -85,8 +86,8 @@ export default async function Landing() {
         </div>
         <div className="mt-16 rounded-2xl border bg-card p-10 text-center glow">
           <h2 className="text-3xl font-bold">Ready to go live as someone else?</h2>
-          <StudioCta signedIn={signedIn} accountsOpen={accountsOpen} signedOutLabel="Sign up to open the studio" className="mt-6" />
-          {!signedIn && !accountsOpen && <p className="mt-4 text-sm text-muted-foreground">{SIGNUP_CLOSED}</p>}
+          <StudioCta signedIn={signedIn} accountsOpen={accountsOpen} className="mt-6" />
+          {!signedIn && !accountsOpen && <SignupClosedNotice className="mt-4" />}
         </div>
       </section>
     </>

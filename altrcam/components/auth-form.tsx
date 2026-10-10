@@ -23,15 +23,43 @@ export function AuthForm({ mode }: { mode: "sign-in" | "sign-up" }) {
     router.push("/dashboard"); router.refresh();
   }
   async function google() {
+    setBusy(true);
+    setMessage("");
     const supabase = createClient();
-    await supabase.auth.signInWithOAuth({ provider: "google", options: { redirectTo: `${window.location.origin}/auth/callback` } });
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: {
+        redirectTo: process.env.NEXT_PUBLIC_DEV_SUPABASE_REDIRECT_URL ?? `${window.location.origin}/auth/callback`,
+      },
+    });
+    if (error) {
+      setBusy(false);
+      setMessage("Google sign-in is unavailable right now.");
+    }
   }
+
+  async function resetPassword() {
+    if (!email) {
+      setMessage("Enter your email address first.");
+      return;
+    }
+    setBusy(true);
+    setMessage("");
+    const supabase = createClient();
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: `${window.location.origin}/auth/callback?next=/settings/password`,
+    });
+    setBusy(false);
+    setMessage(error ? "We could not send a reset email. Please try again." : "Check your email for a password reset link.");
+  }
+
   return <form onSubmit={submit} className="flex w-full max-w-sm flex-col gap-4 rounded-2xl border border-white/10 bg-white/[.04] p-6">
-    <label className="flex flex-col gap-2 text-sm">Email<input required type="email" value={email} onChange={(e) => setEmail(e.target.value)} className="rounded-lg border border-white/10 bg-black/20 px-3 py-2" /></label>
-    <label className="flex flex-col gap-2 text-sm">Password<input required minLength={8} type="password" value={password} onChange={(e) => setPassword(e.target.value)} className="rounded-lg border border-white/10 bg-black/20 px-3 py-2" /></label>
-    {message && <p role="status" className="text-sm text-muted-foreground">{message}</p>}
+    <label className="flex flex-col gap-2 text-sm">Email<input required type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} className="rounded-lg border border-white/10 bg-black/20 px-3 py-2" /></label>
+    <label className="flex flex-col gap-2 text-sm">Password<input required minLength={8} autoComplete={mode === "sign-in" ? "current-password" : "new-password"} type="password" value={password} onChange={(e) => setPassword(e.target.value)} className="rounded-lg border border-white/10 bg-black/20 px-3 py-2" /></label>
+    {message && <p role="status" aria-live="polite" className="text-sm text-muted-foreground">{message}</p>}
     <button disabled={busy} className="rounded-lg bg-primary px-4 py-2 font-medium text-primary-foreground disabled:opacity-50">{busy ? "Please wait…" : mode === "sign-in" ? "Sign in" : "Create account"}</button>
-    <button type="button" onClick={google} className="rounded-lg border border-white/15 px-4 py-2">Continue with Google</button>
+    {mode === "sign-in" && <button type="button" onClick={resetPassword} disabled={busy} className="text-sm text-muted-foreground underline underline-offset-4 disabled:opacity-50">Forgot password?</button>}
+    <button type="button" onClick={google} disabled={busy} className="rounded-lg border border-white/15 px-4 py-2 disabled:opacity-50">Continue with Google</button>
     <Link className="text-center text-sm text-muted-foreground underline" href={mode === "sign-in" ? "/sign-up" : "/sign-in"}>{mode === "sign-in" ? "Create an account" : "Already have an account? Sign in"}</Link>
   </form>;
 }

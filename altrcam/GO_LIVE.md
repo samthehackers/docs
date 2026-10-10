@@ -41,7 +41,7 @@ One search-result summary of a fal article put Lucy realtime at about **$0.04 pe
 | **Resend** | Add and verify your sending domain. | `RESEND_API_KEY`; set `EMAIL_FROM` on that domain |
 | **Upstash** | New Redis (REST). | `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN` |
 
-Also: `CRON_SECRET` (`openssl rand -hex 24`), `NEXT_PUBLIC_APP_URL` (the real https URL), `NEXT_PUBLIC_SUPPORT_EMAIL` (an inbox someone reads), `PRICING_APPROVED`.
+Also: `CRON_SECRET` (`openssl rand -hex 24`), `NEXT_PUBLIC_APP_URL` (the real https URL), `NEXT_PUBLIC_SUPPORT_EMAIL` (an inbox someone reads), `PRICING_APPROVED`, and `SIGNUPS_OPEN` (sign-up stays closed until it is `true`). Every variable, per environment, with where it comes from: [`docs/SETUP.md`](./docs/SETUP.md).
 
 ### The database (already created)
 

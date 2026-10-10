@@ -4,6 +4,8 @@ Realtime AI video transformation on your webcam, as a real SaaS: accounts, plans
 
 **Stack:** Next.js 15 (App Router, TS strict) · Tailwind · Clerk · Supabase Postgres via Drizzle (server-side only) · Supabase Storage · fal.ai (`decart/lucy-2-5/realtime`) · Paystack + NOWPayments · Resend · Upstash Ratelimit · Vitest + Playwright · Vercel.
 
+> **Setting up a deployment? [`docs/SETUP.md`](./docs/SETUP.md)** lists every environment variable for Production and Preview (secret or public, where it comes from), the Clerk Dashboard settings, and the `SIGNUPS_OPEN` sign-up switch.
+>
 > **Going live? Follow [`GO_LIVE.md`](./GO_LIVE.md)** (ordered checklist, `npm run preflight`, exact Vercel settings). Read [`README_LIMITATIONS.md`](./README_LIMITATIONS.md) first. In particular, the fal WebRTC signaling message schema is **unverified** and has not been exercised against the real service.
 
 ## Quick start
@@ -23,7 +25,8 @@ Env is validated with Zod at boot in production (`lib/env.ts`, `instrumentation.
 
 | Variable | Purpose |
 |---|---|
-| `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY`, `CLERK_WEBHOOK_SECRET` | Clerk auth + svix webhook secret |
+| `SIGNUPS_OPEN` | `true` opens sign-up (also needs both Clerk keys and `DATABASE_URL`); unset/`false` keeps it closed. A Production build with `true` and a missing credential fails. See [`docs/SETUP.md`](./docs/SETUP.md) |
+| `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY`, `CLERK_WEBHOOK_SECRET` | Clerk auth + svix webhook secret (sign-in/up URLs and redirects are set in code, `AUTH_URLS` in `lib/routes.ts`) |
 | `DATABASE_URL` | Supabase Postgres connection string (server only; the pooler URL works, `prepare:false` is set) |
 | `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` | Storage only. No Supabase client runs in the browser |
 | `FAL_KEY` | fal.ai key, used only by the server proxy |
@@ -44,7 +47,7 @@ Plan limits have defaults in [`lib/plans.ts`](./lib/plans.ts) and can be overrid
 2. Storage → create a **private** bucket named `uploads`.
 3. Run `npm run db:migrate`. The second migration enables RLS on every table with no policies, so a leaked anon key reads nothing.
 
-**Clerk**
+**Clerk** (full list of settings: [`docs/SETUP.md`](./docs/SETUP.md#clerk-dashboard))
 1. Enable Email+password, Google and GitHub. Optionally enable TOTP (Multi-factor).
 2. Webhooks → add endpoint `https://<domain>/api/webhooks/clerk` with events `user.created`, `user.updated`, `user.deleted`; copy the signing secret to `CLERK_WEBHOOK_SECRET`.
 3. Admin role = `publicMetadata.role = "admin"` (set by `npm run db:seed -- <email>`). It is re-checked server-side in every `/api/admin/*` handler, in the `/admin` page itself and inside every admin data function (`lib/admin.ts`), not only in the layout: Next.js renders a layout and its page in parallel, so a layout redirect alone does not protect the page's data. Tests call the page and each data function directly as a signed-out visitor, a normal user and an admin (`tests/unit/admin-gate.test.ts`); a source check fails if the page ever runs its own database query. This has not been exercised against real Clerk.

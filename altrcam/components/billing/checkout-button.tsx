@@ -1,5 +1,6 @@
 "use client";
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { PayProvider, ProductId } from "@/lib/plans";
@@ -35,15 +36,26 @@ export function CheckoutButton({ product, options, variant = "gradient", classNa
   );
 }
 
-export function CancelButton() {
+/** Cancel at period end. Refreshes the page when done; a second click (or another tab) reads "Already cancelled", not an error. */
+export function CancelButton({ endsLabel }: { endsLabel?: string | null }) {
+  const router = useRouter();
   const [busy, setBusy] = useState(false);
-  const [msg, setMsg] = useState<string | null>(null);
+  const [done, setDone] = useState(false);
+  const [msg, setMsg] = useState<{ text: string; error?: boolean } | null>(null);
   async function cancel() {
-    if (!confirm("Cancel your subscription? Pro stays active until the end of the paid period.")) return;
-    setBusy(true);
-    const r = await fetch("/api/payments/cancel", { method: "POST" });
-    setMsg(r.ok ? "Cancelled. You keep Pro until your period ends." : "Couldn't cancel. Contact support.");
+    if (!confirm(`Cancel your subscription? Pro stays active until ${endsLabel ?? "the end of the paid period"} and you won't be charged again.`)) return;
+    setBusy(true); setMsg(null);
+    const r = await fetch("/api/payments/cancel", { method: "POST" }).catch(() => null);
+    const j = r ? await r.json().catch(() => ({})) : {};
+    if (r?.ok) { setDone(true); setMsg({ text: j.message ?? "Cancelled." }); router.refresh(); }
+    else if (r?.status === 404) { setDone(true); setMsg({ text: "Already cancelled. Pro stays active until the end of the period you paid for." }); router.refresh(); }
+    else setMsg({ text: j.error ?? "Couldn't cancel. Nothing changed; try again or contact support.", error: true });
     setBusy(false);
   }
-  return <div><Button variant="outline" size="sm" onClick={cancel} disabled={busy}>Cancel subscription</Button>{msg && <p role="status" className="mt-2 text-xs text-muted-foreground">{msg}</p>}</div>;
+  return (
+    <div>
+      {!done && <Button variant="outline" size="sm" onClick={cancel} disabled={busy}>{busy && <Loader2 className="h-4 w-4 animate-spin" aria-hidden />} Cancel subscription</Button>}
+      {msg && <p role={msg.error ? "alert" : "status"} className={`mt-2 text-xs ${msg.error ? "text-destructive" : "text-muted-foreground"}`}>{msg.text}</p>}
+    </div>
+  );
 }

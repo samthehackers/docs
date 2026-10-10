@@ -85,6 +85,9 @@ export function billingDetails({ yearlyPrice, pricesApproved, lifetimeCredits }:
 export const LIFETIME_TOPUP_LINE = `Lifetime members pay ${Math.round(LIFETIME_TOPUP_DISCOUNT * 100)}% less for top-ups.`;
 export const LIFETIME_TOPUP_APPLIED = `Your Lifetime discount is applied: these prices are ${Math.round(LIFETIME_TOPUP_DISCOUNT * 100)}% below the list price, and that is what you are charged.`;
 
+/** What actually works when a renewal fails: this site can't change a card. */
+export const PAST_DUE_HELP = "If Paystack emailed you a link to update your card, use it. Otherwise contact support. This site can't change your card.";
+
 /** Shown where sign-up is not open (no sign-in or no database configured): says so instead of selling it. */
 export const SIGNUP_CLOSED = "Sign-up isn't open on this deployment yet.";
 

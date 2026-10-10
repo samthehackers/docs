@@ -1,9 +1,10 @@
 import {
-  buyerPrice, LIFETIME_TOPUP_DISCOUNT, listPrice, PROVIDER_FOR_CURRENCY, providerSells,
+  buyerPrice, LIFETIME_TOPUP_DISCOUNT, listPrice, PRODUCTS, PROVIDER_FOR_CURRENCY, providerSells,
   type Currency, type EnvSource, type PayProvider, type Plan, type PlanConfig, type ProductId,
 } from "@/lib/plans";
 import { checkMargin, marginInputs } from "@/lib/margin";
 import { money } from "@/lib/utils";
+import { fmtDate } from "@/lib/account-summary";
 
 /**
  * What is on sale, at what price, through which provider. The pricing page, the billing page and the checkout API all ask
@@ -67,6 +68,27 @@ export const offerPrice = (o: Offer) => money(o.amountMinor, o.currency);
 /** "20% Lifetime discount (list price NGN 3,000)" when this offer is discounted, else undefined. */
 export const discountNote = (o: Offer) =>
   o.amountMinor < o.listMinor ? `${Math.round(LIFETIME_TOPUP_DISCOUNT * 100)}% Lifetime discount (list price ${money(o.listMinor, o.currency)})` : undefined;
+
+/**
+ * Whether this account may buy this product at all, whatever the price: Lifetime members buy only top-ups, and nobody gets a
+ * second Pro subscription (an active one on record, or a Pro period still paid for). The checkout API refuses with this
+ * answer and the billing and pricing pages hide the button with it, so they agree.
+ */
+export function purchaseBlock(
+  product: ProductId,
+  u: { plan: Plan; planRenewsAt: Date | null },
+  hasActiveSubscription: boolean,
+  now = new Date(),
+): { code: "already_lifetime" | "already_subscribed"; message: string } | null {
+  const kind = PRODUCTS[product].kind;
+  if (u.plan === "LIFETIME" && kind !== "topup") return { code: "already_lifetime", message: "You already have Lifetime. Nothing was charged." };
+  if (kind !== "subscription") return null;
+  if (hasActiveSubscription) return { code: "already_subscribed", message: "You already have an active Pro subscription, so you can't start another. Nothing was charged." };
+  if (u.plan === "PRO" && u.planRenewsAt && u.planRenewsAt.getTime() > now.getTime()) {
+    return { code: "already_subscribed", message: `Your Pro plan is already paid until ${fmtDate(u.planRenewsAt)}. You can subscribe again after that date. Nothing was charged.` };
+  }
+  return null;
+}
 
 /** Which providers are configured on this deployment (from lib/config capabilities). */
 export interface ProvidersOpen { paystack: boolean; nowpayments: boolean }

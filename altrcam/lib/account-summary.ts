@@ -133,6 +133,21 @@ export function planStatusView(
   return { label: capitalise(u.planStatus), detail: end ? `Until ${end}` : null, tone: "neutral", alert: null };
 }
 
+/** payments.status as a person reads it on Billing. Anything unknown is shown capitalised rather than guessed at. */
+const PAYMENT_STATUS: Record<string, { label: string; detail: string }> = {
+  success: { label: "Paid", detail: "" },
+  pending: { label: "Waiting for confirmation", detail: "No confirmation from the payment provider yet. If you paid, it applies automatically once confirmed." },
+  failed: { label: "Failed", detail: "Nothing was charged for this attempt." },
+  abandoned: { label: "Not completed", detail: "Checkout was started but not finished within a day." },
+  rejected: { label: "Needs review", detail: "The payment didn't match what was ordered, so nothing was granted. Contact support if money left your account." },
+  refunded: { label: "Refunded", detail: "" },
+  cancelled: { label: "Cancelled", detail: "" },
+  expired: { label: "Expired", detail: "" },
+};
+export const paymentStatusView = (status: string) => PAYMENT_STATUS[status] ?? { label: capitalise(status), detail: "" };
+/** A payment attempt that can be started again from Billing (a new checkout; the old row stays as it was). */
+export const retryable = (status: string) => status === "failed" || status === "abandoned" || status === "expired";
+
 /** The plan setting controls the camera size the Studio asks for, not the quality of what the AI returns. */
 const captureLabel = (p: PlanConfig) => `${CAPTURE_SIZE[p.maxResolution].width}×${CAPTURE_SIZE[p.maxResolution].height}`;
 

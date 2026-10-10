@@ -114,7 +114,7 @@ test.describe("content honesty", () => {
   test("the sign-up and sign-in pages say accounts aren't available, the same as the pages that link to them", async ({ page }) => {
     for (const p of ["/sign-up", "/sign-in"]) {
       await page.goto(p);
-      await expect(page.getByRole("status")).toContainText("Accounts aren't available on this deployment yet");
+      await expect(page.getByRole("status")).toContainText("Account access is not configured for this deployment yet");
     }
   });
   test("terms and privacy are clearly marked as templates", async ({ page }) => {

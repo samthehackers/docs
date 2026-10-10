@@ -1,7 +1,7 @@
 /**
  * Self-service answers on /support. Written from how the app is built (the Studio, metering and billing code, the FAQ and
- * the Terms), not from live sessions: the app has not been run end to end against the real AI service, payment providers
- * or Clerk (README_LIMITATIONS.md). So this promises no response times and no outcomes, and says plainly where the cause
+ * the Terms), not from live sessions: the app has not been run end to end against the real AI service or payment providers
+ * (README_LIMITATIONS.md). So this promises no response times and no outcomes, and says plainly where the cause
  * might be on our side. Limits that can change (session length, allowances) are read from the effective plan config.
  */
 import Link from "next/link";

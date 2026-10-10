@@ -62,7 +62,6 @@ describe("the Vercel Supabase integration's variable names count", () => {
     expect(issues).not.toContain("DATABASE_URL");
     expect(issues).not.toContain("SUPABASE_SERVICE_ROLE_KEY");
     expect(issues).not.toContain("NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY");
-    expect(issues.join(" ")).not.toMatch(/CLERK/);
   });
   it("no capability refers to a removed integration", () => {
     expect(Object.keys(capabilities())).not.toContain("webhooks");

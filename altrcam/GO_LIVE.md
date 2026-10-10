@@ -1,18 +1,18 @@
 # Go-live checklist
 
-Everything below needs **your real accounts and credentials**. This repo has never been run against Clerk, Supabase, Paystack, NOWPayments, Resend, Upstash or fal.ai, so treat the first pass as the integration test. Work top to bottom; each step says how you know it worked.
+Everything below needs **your real accounts and credentials**. Sign-up, email confirmation, sign-in, every signed-in page, sign-out, admin and password reset have been run end to end against a **local** Supabase stack (`npm run test:e2e:local`), but never against the hosted project, and nothing here has run against Paystack, NOWPayments, Resend, Upstash or fal.ai, so treat the first pass as the integration test. Work top to bottom; each step says how you know it worked.
 
 > Do all of this on a **preview/staging** deployment with **test-mode** payment keys first. Switch to live keys only after section 9 passes.
 
-Assumes the app is on `main` including: the CSP fix for production Clerk, build-without-credentials, admin plan limits, and the isolation/lifecycle tests.
+Assumes the app is on `main` including: Supabase Auth, the database URL fallback to the integration's `POSTGRES_URL`, build-without-credentials, admin plan limits, and the isolation/lifecycle tests.
 
 ## 0. What is and isn't proven today
 
 | Proven here (automated) | Not proven (needs you) |
 |---|---|
-| Builds and serves public pages with **zero** credentials; protected routes answer 503 with a reason | Anything against a real Clerk, Supabase, Paystack, NOWPayments, Resend or Upstash account |
+| Builds and serves public pages with **zero** credentials; protected routes answer 503 with a reason | Anything against the hosted Supabase project, or a real Paystack, NOWPayments, Resend or Upstash account |
 | Credit ledger, metering, plan limits, payment fulfilment idempotency and signature checks (real Postgres engine) | Real Paystack/NOWPayments payloads and webhook delivery |
-| One user can't read, change, bill or cancel another's data; admin routes are admin-only | Sign-in, social login, email verification, 2FA |
+| One user can't read, change, bill or cancel another's data; admin routes are admin-only. With a **local** Supabase stack: sign-up + emailed confirmation, sign-in, every signed-in page with real data, sign-out, admin via `app_metadata`, password reset by email | The hosted project's Auth settings (Site URL, redirect URLs, SMTP, templates), Google sign-in, real inbox delivery |
 | Studio against a **fake** fal: the offer goes out first and ICE candidates queue behind the first reply (checked through the real `@fal-ai/client`), teardown on every exit path, a failed connection ends its billed session and keeps its reason on screen; responsive layout in real Chromium | **fal's real message format and ordering.** Whether the live service replies, in what shape, and accepts the token request. The first live Studio session is the test |
 
 ## 1. Decide your pricing first (this can sink the business)
@@ -33,8 +33,7 @@ One search-result summary of a fal article put Lucy realtime at about **$0.04 pe
 
 | Service | Do this | Gives you |
 |---|---|---|
-| **Supabase** | **Already done** for this deployment, see "The database" below. For another environment: new project, apply the migrations, create a **private** bucket named `uploads`. | `DATABASE_URL` (Dashboard → Connect → *Transaction pooler*, port 6543, with your database password), `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` (Settings → API; server only, never in a `NEXT_PUBLIC_` variable) |
-| **Clerk** | New app. Enable Email+password, Google, GitHub; optional TOTP. For production create a **Production instance** and add the DNS records Clerk asks for (this creates `clerk.<your-domain>`). | `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY` |
+| **Supabase** (database, storage and Auth) | **Already done** for this deployment and connected to Vercel through the Supabase integration, see "The database" below. For another environment: new project, connect the integration (or set the variables by hand), apply the migrations, create a **private** bucket named `uploads`, and do section 2b. | From the integration: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`/`_ANON_KEY`, `SUPABASE_URL`, `SUPABASE_SECRET_KEY`/`SUPABASE_SERVICE_ROLE_KEY`, `POSTGRES_URL`, `POSTGRES_PRISMA_URL`, `POSTGRES_URL_NON_POOLING`. The app uses `DATABASE_URL` if set, else `POSTGRES_URL` |
 | **Paystack** | Create two Plans (monthly, yearly). Amount and currency **must equal** `PRICE_PRO_MONTHLY` / `PRICE_PRO_YEARLY` / `PRICE_CURRENCY`, or renewals are recorded as rejected. | `PAYSTACK_SECRET_KEY`, `PAYSTACK_PUBLIC_KEY`, `PAYSTACK_PLAN_PRO_MONTHLY`, `PAYSTACK_PLAN_PRO_YEARLY` |
 | **NOWPayments** (optional) | API key and IPN secret. | `NOWPAYMENTS_API_KEY`, `NOWPAYMENTS_IPN_SECRET` |
 | **fal.ai** | API key. | `FAL_KEY` |
@@ -54,10 +53,27 @@ What is already in place and checked:
 - Supabase's security checks report only "RLS enabled, no policy" (13 times, which is the design: the API roles read nothing; the server connects as the database owner). Smoke-tested by inserting a user, ledger row, referral, plan config and session and rolling them back; the plan-limit CHECK constraint rejects out-of-bounds rows.
 
 What is still yours to do:
-- [ ] Copy the **Transaction pooler** connection string (with your database password) into Vercel as `DATABASE_URL`, and the **service_role** key as `SUPABASE_SERVICE_ROLE_KEY`, for **Production only**. Do not point Preview deployments at this database; use a separate Supabase project for previews.
+- [ ] Nothing to copy for the database: the Supabase integration already sets `POSTGRES_URL` (transaction pooler), which the app now uses when `DATABASE_URL` is unset (before this fix every signed-in page failed with "DATABASE_URL is not set"). Don't add a `DATABASE_URL` unless you mean to override it. Check the integration's variables are scoped to the environments you want; do not point Preview deployments at the production database (use a separate Supabase project or branch for previews).
+- [ ] Do section 2b (Auth settings).
 - [ ] **Free-plan limits:** the project is **paused after a week without activity**, and I believe the free plan has no automatic backups (check Settings → Database → Backups). Move to **Pro** before taking real users.
 - [ ] Run `npm run preflight` with the real variables. It checks the tables, RLS, the private bucket and the other services.
 - [ ] Future schema changes: `npm run db:generate`, review the SQL, then `npm run db:migrate` against the target database.
+
+## 2b. Supabase Auth settings (dashboard → Authentication)
+
+None of these can be set from the repo, and none were changed by this work. Check each:
+
+| Where | Set | Why |
+|---|---|---|
+| URL Configuration → **Site URL** | `https://altrcam.vercel.app` (or your custom domain once it is live) | The base of links in Auth emails |
+| URL Configuration → **Redirect URLs** | `https://altrcam.vercel.app/**` (plus each custom domain, and `http://localhost:3000/**` for local dev) | The app asks Supabase to send people back to `/auth/callback?next=…`; anything not on this list is replaced by the Site URL and the link lands on the home page instead of signing in |
+| Providers → **Email** | enabled, **Confirm email** on | The app also refuses unconfirmed emails server-side (`/verify-email`), so turning confirmation off only skips the email |
+| **SMTP Settings** | your provider (Resend works: host `smtp.resend.com`, port 465, user `resend`, password = an API key; sender on your verified domain) | Supabase's built-in sender is for testing: as far as I know it delivers only to your Supabase team's own addresses and only a few emails an hour (check the dashboard's notice). Real users won't get confirmation or reset emails without custom SMTP |
+| Email Templates (optional) | Confirm signup: `{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=email` · Reset password: `{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=recovery&next=/settings/password` | The default `{{ .ConfirmationURL }}` links work (via `/auth/callback`) but sign you in only in the browser that asked; these `token_hash` links work from any device. Both styles are supported |
+| Providers → **Google** (optional) | client ID/secret from Google Cloud; then set `NEXT_PUBLIC_AUTH_GOOGLE_ENABLED=true` in Vercel and redeploy | The Google button is hidden until that variable is `true`, so a disabled provider never shows a dead button |
+| Rate limits | defaults are fine to start | Sign-up/sign-in and email limits are enforced by Supabase |
+
+Accounts created before this fix (one confirmed user signed up today) have no `users` row yet; it is created on their next signed-in visit, with the signup credits.
 
 ## 3. Check locally
 
@@ -69,9 +85,17 @@ npm run db:migrate                # schema + RLS + plan_config
 npm run preflight                 # read-only check of everything above
 ```
 
-`preflight` should print no `FAIL`. It checks: env validates, every table in the schema exists, RLS is on for each, the `uploads` bucket exists and is **private**, the Clerk key works, both Paystack plans exist **and match your prices**, the NOWPayments key works, the Resend domain is verified, and Redis answers. It cannot check fal or webhook registration (sections 7 and 6).
+`preflight` should print no `FAIL`. It checks: env validates, every table in the schema exists, RLS is on for each, the `uploads` bucket exists and is **private**, the Supabase secret key can list Auth users, both Paystack plans exist **and match your prices**, the NOWPayments key works, the Resend domain is verified, and Redis answers. It cannot check fal or webhook registration (sections 7 and 6).
 
-Then make yourself the first admin: sign up in the running app, then `npm run db:seed -- you@example.com`. Nobody is ever admin automatically; the role is Clerk `publicMetadata.role = "admin"`, set only by that command (or by you in the Clerk dashboard).
+Then make yourself the first admin: sign up in the running app (and confirm your email), then either run `npm run db:seed -- you@example.com` with the real variables in `.env.local`, or run this in the Supabase dashboard → SQL editor:
+
+```sql
+update auth.users
+set raw_app_meta_data = coalesce(raw_app_meta_data, '{}'::jsonb) || '{"role":"admin"}'::jsonb
+where email = 'you@example.com';
+```
+
+Nobody is ever admin automatically. The role is Supabase `app_metadata.role = "admin"`: users can't change `app_metadata` themselves (only the secret key or SQL can), and the app reads it server-side through `auth.getUser()` on every admin request, so the change applies on your next page load; the Admin link then appears in the header. Remove it with `raw_app_meta_data - 'role'`.
 
 ## 4. Vercel: settings to verify
 
@@ -90,9 +114,9 @@ The project exists: **`altrcam`**, team *TrustGeeks Security lnc teams* (`geeeks
 | Domains | add `altrcam.com` and `altrcam.ai` (the app redirects `.ai` to `.com`) |
 | Region | pick the one closest to your Supabase region |
 
-**Environment variables:** add every variable above in *Settings → Environment Variables*. Use **different values per environment**: Preview gets the Clerk *development* instance and Paystack **test** keys; only Production gets live ones. `NEXT_PUBLIC_*` values are baked in at build time, so **redeploy after changing them**.
+**Environment variables:** add every variable above in *Settings → Environment Variables* (the Supabase ones come from the integration). Use **different values per environment**: Preview gets its own Supabase project and Paystack **test** keys; only Production gets live ones. `NEXT_PUBLIC_*` values are baked in at build time, so **redeploy after changing them** (including `NEXT_PUBLIC_AUTH_GOOGLE_ENABLED`).
 
-**Set the Clerk keys for Production builds too.** The public pages read the signed-in state; a build without the keys bakes in the signed-out state for any page Next renders statically. With the keys set, every marketing page is dynamic (the layout reads the session).
+**Set the Supabase public keys for Production builds too.** The public pages read the signed-in state; a build without `NEXT_PUBLIC_SUPABASE_URL` and the publishable key bakes in the signed-out state for any page Next renders statically. With them set, every marketing page is dynamic (the layout reads the session).
 
 The app builds and serves public pages even with none of them set. `GET /api/health` on the deployed URL shows which integrations it considers configured (booleans only), a quick way to see what's still missing.
 
@@ -115,7 +139,6 @@ Push a branch or open a PR; Vercel builds a preview. Open it, check `/api/health
 
 | Where | URL | Events |
 |---|---|---|
-| Clerk → Webhooks | `https://<domain>/api/webhooks/clerk` | `user.created`, `user.updated`, `user.deleted`. Signing secret → `CLERK_WEBHOOK_SECRET` |
 | Paystack → Settings → API & Webhooks | `https://<domain>/api/webhooks/paystack` | all (the app handles `charge.success`, `subscription.create`, `subscription.disable`, `subscription.not_renew`, `invoice.payment_failed`) |
 | NOWPayments → IPN | `https://<domain>/api/webhooks/nowpayments` | payment status |
 
@@ -144,7 +167,7 @@ A bad signature returns 401, so a wrong secret shows up as webhook deliveries fa
 | **Failed**, "...couldn't set up a direct video connection" | ICE failed: firewall/VPN, or the service needs TURN servers we don't use |
 | **Failed**, "The AI service replied, but its reply couldn't be used" | the answer's SDP field name differs from `answer.sdp` |
 | Connects, no video | answer applied but no `ontrack`: codecs/transceivers in the offer |
-| Sign-in doesn't load on the production domain | CSP: confirm the Clerk host from your publishable key is in `script-src` (it is derived automatically; check the console) |
+| Sign-in fails with a CSP error in the console | the browser talks to `NEXT_PUBLIC_SUPABASE_URL`; `*.supabase.co` is allowed, and a custom Auth domain is added to `connect-src` automatically from that variable at build time, so redeploy after changing it |
 
 Also compare what fal actually **bills** for that session against the credits the app deducted.
 
@@ -157,8 +180,10 @@ None of these was read from fal's or Decart's documentation, and none was used t
 **When a real session has worked, update what the public pages say.** Until then the landing page, `/how-it-works`, `/pricing`, the FAQ and `/billing` tell visitors that live video has not been tested end to end and may not connect (`lib/availability.ts`; one wording, shown in all five places), and the site's meta description and hero say the product is "built to" restyle video rather than that it does. After you have run and checked a session, replace that wording with what you actually tested, or remove the `AvailabilityNotice` uses and the FAQ entry "Does the live video work yet?", and un-hedge the hero and `app/layout.tsx`. Do not leave "not tested" up after it has been, and do not take it down before. **Tests will fail when you do, on purpose:** they assert the notice (search for `LIVE_AVAILABILITY` and `live-availability` in `tests/unit/public-copy.test.ts`, `tests/unit/public-pages.test.ts` and `tests/public/site.spec.ts`); update them to the new wording in the same change.
 
 ## 8. End-to-end test (test mode)
-- [ ] **Sign up with Google**: land on `/dashboard`; a `users` row exists with your FREE allowance (`signup_grant` in `credit_ledger`).
-- [ ] **Email + password sign-up**: verification email arrives; reset-password works; 2FA can be enabled in Settings; Settings → Security (Clerk) lists your signed-in devices and lets you revoke each one. Clerk has no single "sign out everywhere" button, so don't promise one.
+- [ ] **Email + password sign-up**: you land on "Confirm your email"; the confirmation email arrives (check spam; see SMTP in 2b); its link signs you in on `/dashboard`, where a `users` row exists with your FREE allowance (`signup_grant` in `credit_ledger`). Opening the link on another device confirms the address and asks you to sign in.
+- [ ] **Forgot password** on `/sign-in`: the email's link lands on `/settings/password`; the new password works and the old one doesn't.
+- [ ] **Sign out** from the header, then `/dashboard` sends you to `/sign-in`.
+- [ ] **Google** (only if you enabled it, 2b): "Continue with Google" shows, and lands on `/dashboard` with a `users` row.
 - [ ] **Studio**: go live, credits count down, Stop ends the session (`studio_sessions.ended_at` set, `seconds_billed` ≈ what you watched).
 - [ ] **Studio failure path**: break the connection on purpose (block the WebSocket in DevTools, or go offline after Go live). The page shows **Failed** with a reason, heartbeats stop, the session is closed (`end_reason = connection_failed`), and **Reconnect** starts a new session. Check what a failed attempt cost against what the page warned.
 - [ ] **Camera**: block camera access for the site; the Studio explains it and **Retry camera** works once you allow it. Unplug or disable the camera mid-session (a real device, not a simulation); the session ends (`end_reason = camera_lost`).
@@ -171,17 +196,17 @@ None of these was read from fal's or Decart's documentation, and none was used t
 - [ ] **Crypto** (if enabled): sandbox payment reaches `finished` and unlocks; `partially_paid` only notifies.
 - [ ] **Snapshot** appears in History with a thumbnail; **Record clip** downloads (Pro).
 - [ ] **Admin**: grant/revoke credits, change a user's plan, edit **Plans** limits; all appear in the audit log.
-- [ ] **Delete account**: Clerk user, files and rows gone; payments remain, anonymised.
+- [ ] **Delete account**: the Supabase Auth user (Authentication → Users), files and rows are gone; payments remain, anonymised; signing in again fails.
 - [ ] **Public pages** render: `/how-it-works`, `/faq`, `/terms`, `/privacy`, `/contact`, a bad URL (branded 404), `/robots.txt`, `/sitemap.xml`.
 
 ## 9. Before switching to live money
-- [ ] **Clerk Production** instance (dev keys are rate-limited and show a banner), **live** Paystack keys, all webhooks re-registered with the live secrets.
+- [ ] **Custom SMTP** in Supabase Auth (the built-in sender is rate-limited and not for production), **live** Paystack keys, all webhooks re-registered with the live secrets.
 - [ ] A lawyer has reviewed `/terms` and `/privacy` (they are templates, marked as such on the page) and you've decided your refund policy. The Terms currently say payments are non-refundable except where the law requires.
 - [ ] Remove the "Template text" banner from those pages only after that review.
 - [ ] Prices approved → `PRICING_APPROVED=true`; allowances set from the real provider cost (section 1).
 - [ ] `NEXT_PUBLIC_SUPPORT_EMAIL` is a monitored inbox.
 - [ ] Keys live only in Vercel env (never committed); rotate anything ever pasted into a chat or ticket.
-- [ ] Optional: set repo variable `E2E_ENABLED=true` with Clerk test-mode secrets so CI also runs the Playwright sign-up → pay → unlock test.
+- [ ] Optional: set repo variable `E2E_ENABLED=true` so CI also runs the local-Supabase Playwright suite (`npm run test:e2e:local`; Docker on the runner, no secrets needed).
 - [ ] Watch the first real payment end to end, and the first real session's cost in the fal dashboard.
 
 ## Known limits

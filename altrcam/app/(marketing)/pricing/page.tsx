@@ -10,8 +10,8 @@ import { billingDetails, SIGNUP_CLOSED } from "@/lib/public-copy";
 
 export const metadata = { title: "Pricing" };
 
-// With Clerk configured this page is dynamic (the layout reads the session), so admin-edited plan limits show within the plan-config
-// cache time (about 15 s). With no Clerk it is static and revalidates every minute.
+// With Supabase Auth configured this page is dynamic (the layout reads the session), so admin-edited plan limits show within the plan-config
+// cache time (about 15 s). With no Auth configured it is static and revalidates every minute.
 export const revalidate = 60;
 
 export default async function Pricing() {

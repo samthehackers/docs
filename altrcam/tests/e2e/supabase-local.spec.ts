@@ -4,7 +4,8 @@
  *
  * Covers: sign-up → confirmation email → confirm → dashboard with the ledger balance; every signed-in route renders real
  * data (no error boundary); sign-out; a second user can't see or touch the first user's history and sessions; non-admins
- * are kept out of /admin and an admin (app_metadata.role) gets in; password reset through the emailed link; the
+ * are kept out of /admin and an admin (app_metadata.role) gets in; password reset through the emailed link; account
+ * deletion removes the rows and the Supabase login; the
  * auth callback refuses off-site redirects. The app runs without FAL_KEY, payment, Resend or Upstash keys, like production.
  */
 import { expect, test, type Page } from "@playwright/test";
@@ -238,4 +239,22 @@ test("auth links never redirect off-site, and a bad link explains itself", async
   await page.goto("/auth/callback?error=access_denied&error_code=otp_expired&error_description=Email+link+is+invalid+or+has+expired");
   await expect(page).toHaveURL(/\/sign-in\?error=link_expired$/);
   await expect(page.locator("main").getByRole("alert")).toContainText("That link has expired.");
+});
+
+test("deleting an account removes its rows and its Supabase login", async ({ page }) => {
+  await signIn(page, B.email, B.password);
+  await expect(page).toHaveURL(/\/dashboard$/);
+  await page.goto("/settings");
+  await page.getByLabel("Type DELETE to confirm").fill("DELETE");
+  await page.getByRole("button", { name: "Delete my account" }).click();
+  await expect(page).toHaveURL(/\/$/);
+
+  const db = sql();
+  try {
+    expect(await db`select id from users where id = ${B.id}`).toHaveLength(0);
+    expect(await db`select id from credit_ledger where user_id = ${B.id}`).toHaveLength(0);
+  } finally { await db.end(); }
+  await expect(authAdmin(`users/${B.id}`)).rejects.toThrow(/404/);
+  await signIn(page, B.email, B.password);
+  await expect(page.locator("main").getByRole("status")).toContainText("Invalid email or password.");
 });

@@ -24,7 +24,7 @@ const go = async (handler: (r: Request) => Promise<Response>, query: string) => 
   return new URL(res.headers.get("location")!);
 };
 
-beforeEach(() => { h.exchange.mockClear(); h.verify.mockClear(); h.exchange.mockResolvedValue({ error: null }); h.verify.mockResolvedValue({ error: null }); vi.spyOn(console, "error").mockImplementation(() => {}); });
+beforeEach(() => { process.env.NEXT_PUBLIC_SUPABASE_URL = "https://example.supabase.co"; process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY = "sb_publishable_x"; h.exchange.mockClear(); h.verify.mockClear(); h.exchange.mockResolvedValue({ error: null }); h.verify.mockResolvedValue({ error: null }); vi.spyOn(console, "error").mockImplementation(() => {}); });
 
 describe("safeNextPath", () => {
   it.each([
@@ -73,6 +73,12 @@ describe("/auth/callback", () => {
     const to = await go(callback, "/auth/callback?code=abc");
     expect(to.searchParams.get("error")).toBe("other_browser");
     expect(authErrorMessage("other_browser")).toMatch(/it is confirmed: sign in/);
+  });
+  it("without Supabase configured a stray link goes to sign-in instead of crashing", async () => {
+    delete process.env.NEXT_PUBLIC_SUPABASE_URL;
+    expect((await go(callback, "/auth/callback?code=abc")).pathname).toBe("/sign-in");
+    expect((await go(confirm, "/auth/confirm?token_hash=t&type=signup")).pathname).toBe("/sign-in");
+    expect(h.exchange).not.toHaveBeenCalled();
   });
   it("no code at all is an invalid link", async () => {
     expect((await go(callback, "/auth/callback")).searchParams.get("error")).toBe("link_invalid");

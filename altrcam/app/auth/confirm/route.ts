@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import type { EmailOtpType } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
+import { supabaseConfigured } from "@/lib/config";
 import { authErrorCode, safeNextPath } from "@/lib/safe-redirect";
 
 const TYPES: EmailOtpType[] = ["signup", "invite", "magiclink", "recovery", "email_change", "email"];
@@ -21,6 +22,7 @@ export async function GET(request: Request) {
   const type = url.searchParams.get("type") as EmailOtpType | null;
   if (!tokenHash || !type || !TYPES.includes(type)) return fail("link_invalid");
 
+  if (!supabaseConfigured()) return fail("auth_failed"); // no Auth on this deployment: never crash on a stray link
   const supabase = await createClient();
   const { error: verifyError } = await supabase.auth.verifyOtp({ type, token_hash: tokenHash });
   if (verifyError) {

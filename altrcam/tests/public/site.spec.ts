@@ -133,13 +133,21 @@ test.describe("without credentials the app fails honestly, not randomly", () => 
       expect(await res.text()).toContain("not configured");
     });
   }
-  test("protected APIs refuse (503 here; 401 when signed-out with Clerk configured)", async ({ request }) => {
+  test("protected APIs refuse (503 here; 401 when signed out with Supabase Auth configured)", async ({ request }) => {
     for (const path of ["/api/studio/session/start", "/api/payments/checkout", "/api/admin/credits"]) {
       expect((await request.post(path, { data: {} })).status()).toBe(503);
     }
   });
+  test("auth links never crash or leave the site, even with no Auth configured", async ({ request }) => {
+    for (const q of ["code=x&next=%2F%2Fevil.example", "error=access_denied&error_description=expired", ""]) {
+      const res = await request.get(`/auth/callback?${q}`, { maxRedirects: 0 });
+      expect(res.status()).toBe(307);
+      expect(new URL(res.headers()["location"]).pathname).toBe("/sign-in");
+    }
+    expect((await request.get("/auth/confirm?token_hash=t&type=signup", { maxRedirects: 0 })).status()).toBe(307);
+  });
   test("webhooks reject unsigned requests", async ({ request }) => {
-    for (const w of ["paystack", "nowpayments", "clerk"]) expect((await request.post(`/api/webhooks/${w}`, { data: "{}" })).status()).toBe(401);
+    for (const w of ["paystack", "nowpayments"]) expect((await request.post(`/api/webhooks/${w}`, { data: "{}" })).status()).toBe(401);
   });
   test("unknown URLs get the branded 404; look-alike auth paths are not public", async ({ page, request }) => {
     const res = await page.goto("/definitely-not-a-page");

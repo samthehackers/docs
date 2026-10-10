@@ -12,7 +12,10 @@ import type { ReactElement } from "react";
 
 const h = vi.hoisted(() => ({ me: null as string | null, authCalls: 0, authThrows: false as boolean | Error, plans: null as null | Record<string, unknown> }));
 // The Clerk widgets are stubbed so the sign-in and sign-up pages can be rendered here.
-vi.mock("@clerk/nextjs", () => ({ SignUp: () => "CLERK_SIGNUP_FORM", SignIn: () => "CLERK_SIGNIN_FORM" }));
+vi.mock("@clerk/nextjs", () => ({
+  SignUp: () => "CLERK_SIGNUP_FORM", SignIn: () => "CLERK_SIGNIN_FORM",
+  useUser: () => ({ isLoaded: false, user: undefined }), useClerk: () => ({ signOut: async () => {} }), // the account menu, for signed-in visitors
+}));
 vi.mock("@clerk/nextjs/server", () => ({ auth: async () => { h.authCalls++; if (h.authThrows) throw h.authThrows instanceof Error ? h.authThrows : new Error("clerk down"); return { userId: h.me }; } }));
 // Plan limits come from the database in production; a test can hand the pages a specific set instead.
 vi.mock("@/lib/plan-config", async (orig) => {

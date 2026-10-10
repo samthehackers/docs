@@ -71,7 +71,45 @@ for (const vp of VIEWPORTS) {
     test("navigation is reachable at this width", async ({ page }) => {
       await page.goto("/");
       await expect(page.getByRole("link", { name: "AltrCam home" })).toBeVisible();
-      await expect(page.getByRole("link", { name: /pricing/i }).first()).toBeVisible();
+      const header = page.locator("header");
+      const menuButton = header.getByRole("button", { name: "Menu" });
+      if (vp.width >= 768) {
+        await expect(menuButton).toBeHidden();
+        for (const name of ["How it works", "Pricing", "FAQ"]) await expect(header.getByRole("navigation", { name: "Main" }).getByRole("link", { name })).toBeVisible();
+        return;
+      }
+      // Below md the page links live in the menu: it opens, takes focus, and Escape closes it and returns focus to the button.
+      await expect(menuButton).toHaveAttribute("aria-expanded", "false");
+      await menuButton.click();
+      await expect(menuButton).toHaveAttribute("aria-expanded", "true");
+      const menu = header.getByRole("navigation", { name: "Menu" });
+      for (const name of ["How it works", "Pricing", "FAQ"]) await expect(menu.getByRole("link", { name })).toBeVisible();
+      await expect(menu.getByRole("link", { name: "How it works" })).toBeFocused();
+      expect(await overflowPx(page)).toBeLessThanOrEqual(0);
+      await page.keyboard.press("Escape");
+      await expect(menuButton).toHaveAttribute("aria-expanded", "false");
+      await expect(menu).toBeHidden();
+      await expect(menuButton).toBeFocused();
+      // A click outside closes it too, and a link in it navigates (and closes it).
+      await menuButton.click();
+      await page.locator("main h1").click();
+      await expect(menu).toBeHidden();
+      await menuButton.click();
+      await menu.getByRole("link", { name: "Pricing" }).click();
+      await expect(page).toHaveURL(/\/pricing$/);
+      await expect(header.getByRole("navigation", { name: "Menu" })).toBeHidden();
+      await expect(menuButton).toHaveAttribute("aria-expanded", "false");
+    });
+
+    test("the skip link is the first thing Tab reaches and jumps to the main content", async ({ page }) => {
+      await page.goto("/how-it-works");
+      await page.keyboard.press("Tab");
+      const skip = page.getByRole("link", { name: "Skip to content" });
+      await expect(skip).toBeFocused();
+      await expect(skip).toBeVisible();
+      await page.keyboard.press("Enter");
+      await expect(page).toHaveURL(/#content$/);
+      await expect(page.locator("main#content")).toHaveCount(1);
     });
   });
 }

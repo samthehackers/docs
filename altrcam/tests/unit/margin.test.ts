@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 import { existsSync, readFileSync } from "node:fs";
 import { checkMargin, fullUsageCredits, marginInputs, marginTable, minPassingPriceMinor, LIFETIME_MARGIN_MONTHS, type MarginInputs } from "@/lib/margin";
 import { quote } from "@/lib/pricing";
-import { DEFAULT_PLANS, PRODUCT_IDS, PRODUCTS, providerSells, type Plan, type PlanConfig } from "@/lib/plans";
+import { buyerPrice, DEFAULT_PLANS, LIFETIME_TOPUP_DISCOUNT, PRODUCT_IDS, PRODUCTS, providerSells, type Plan, type PlanConfig } from "@/lib/plans";
 
 const plans = (over: Partial<Record<Plan, Partial<PlanConfig>>> = {}): Record<Plan, PlanConfig> => ({
   FREE: { ...DEFAULT_PLANS.FREE, ...over.FREE }, PRO: { ...DEFAULT_PLANS.PRO, ...over.PRO }, LIFETIME: { ...DEFAULT_PLANS.LIFETIME, ...over.LIFETIME },
@@ -94,6 +94,32 @@ describe("what is on sale (quote)", () => {
   it("never tells a buyer why: the message is the same 'not on sale, nothing charged' for every reason", () => {
     const q = quote("TOPUP_1K", "USD", { plans: plans(), env });
     expect(q.ok ? "" : q.message).toBe("This isn't on sale right now. Nothing was charged.");
+  });
+});
+
+describe("the Lifetime top-up discount", () => {
+  it("takes 20% off top-ups for Lifetime members only, rounded to a whole minor unit, and nothing else", () => {
+    const env = { PRICE_TOPUP_1K_NGN: "300001", PRICE_LIFETIME_NGN: "9900000", PRICE_PRO_MONTHLY_NGN: "1500000" };
+    expect(LIFETIME_TOPUP_DISCOUNT).toBe(0.2);
+    expect(buyerPrice("TOPUP_1K", "NGN", "LIFETIME", env)).toBe(240001); // 240000.8 rounds to 240001
+    expect(buyerPrice("TOPUP_1K", "NGN", "PRO", env)).toBe(300001);
+    expect(buyerPrice("TOPUP_1K", "NGN", "FREE", env)).toBe(300001);
+    expect(buyerPrice("TOPUP_1K", "NGN", null, env)).toBe(300001);
+    expect(buyerPrice("PRO_MONTHLY", "NGN", "LIFETIME", env)).toBe(1500000);
+    expect(buyerPrice("LIFETIME", "NGN", "LIFETIME", env)).toBe(9900000);
+  });
+  it("is checked by the margin guard at the DISCOUNTED price: a top-up can be on sale to everyone and hidden from members", () => {
+    // 1,000 credits x $0.01 = $10. List $25 = 60% (pass). Member price $20 = 50% (pass). List $22 = 54.5% (pass); member $17.60 = 43% (fail).
+    const env = (usd: string) => ({ FAL_COST_PER_SECOND_USD: "0.01", PRICE_TOPUP_1K_USD: usd });
+    expect(quote("TOPUP_1K", "USD", { plans: plans(), buyerPlan: "LIFETIME", env: env("2500") })).toMatchObject({ ok: true, offer: { amountMinor: 2000, listMinor: 2500 } });
+    expect(quote("TOPUP_1K", "USD", { plans: plans(), buyerPlan: "FREE", env: env("2200") }).ok).toBe(true);
+    expect(quote("TOPUP_1K", "USD", { plans: plans(), buyerPlan: "LIFETIME", env: env("2200") })).toMatchObject({ ok: false, reason: "margin_fails" });
+  });
+  it("the margin table has a member row per top-up, and its minimum is the list price whose discounted price passes", () => {
+    const rows = marginTable(plans(), { FAL_COST_PER_SECOND_USD: "0.01" }).filter((r) => r.product === "TOPUP_1K" && r.currency === "USD");
+    expect(rows.map((r) => r.buyer)).toEqual(["everyone", "lifetime member"]);
+    expect(rows[0].minPriceMinor).toBe(2000); // $20 list
+    expect(rows[1].minPriceMinor).toBe(2500); // $25 list -> $20 paid
   });
 });
 

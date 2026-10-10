@@ -1,5 +1,5 @@
 import {
-  buyerPrice, listPrice, PROVIDER_FOR_CURRENCY, providerSells,
+  buyerPrice, LIFETIME_TOPUP_DISCOUNT, listPrice, PROVIDER_FOR_CURRENCY, providerSells,
   type Currency, type EnvSource, type PayProvider, type Plan, type PlanConfig, type ProductId,
 } from "@/lib/plans";
 import { checkMargin, marginInputs } from "@/lib/margin";
@@ -63,6 +63,10 @@ export function offer(product: ProductId, currency: Currency, ctx: QuoteContext)
 
 /** "₦15,000", "$9.99". */
 export const offerPrice = (o: Offer) => money(o.amountMinor, o.currency);
+
+/** "20% Lifetime discount (list price NGN 3,000)" when this offer is discounted, else undefined. */
+export const discountNote = (o: Offer) =>
+  o.amountMinor < o.listMinor ? `${Math.round(LIFETIME_TOPUP_DISCOUNT * 100)}% Lifetime discount (list price ${money(o.listMinor, o.currency)})` : undefined;
 
 /** Which providers are configured on this deployment (from lib/config capabilities). */
 export interface ProvidersOpen { paystack: boolean; nowpayments: boolean }

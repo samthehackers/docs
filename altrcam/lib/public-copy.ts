@@ -1,4 +1,4 @@
-import { CAPTURE_SIZE, type Plan, type PlanConfig } from "@/lib/plans";
+import { CAPTURE_SIZE, LIFETIME_TOPUP_DISCOUNT, type Plan, type PlanConfig } from "@/lib/plans";
 import { fmtSessionLimit } from "@/lib/account-summary";
 import { fmtNum } from "@/lib/utils";
 
@@ -66,6 +66,10 @@ export function billingDetails({ yearlyPrice, pricesApproved }: { yearlyPrice: s
     },
   ];
 }
+
+/** The Lifetime top-up discount, worded from the constant checkout applies (lib/plans.ts LIFETIME_TOPUP_DISCOUNT). */
+export const LIFETIME_TOPUP_LINE = `Lifetime members pay ${Math.round(LIFETIME_TOPUP_DISCOUNT * 100)}% less for top-ups.`;
+export const LIFETIME_TOPUP_APPLIED = `Your Lifetime discount is applied: these prices are ${Math.round(LIFETIME_TOPUP_DISCOUNT * 100)}% below the list price, and that is what you are charged.`;
 
 /** Shown where sign-up is not open (no sign-in or no database configured): says so instead of selling it. */
 export const SIGNUP_CLOSED = "Sign-up isn't open on this deployment yet.";

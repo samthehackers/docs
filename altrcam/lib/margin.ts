@@ -11,7 +11,7 @@
  * not included. Pure functions only: lib/pricing.ts applies the verdict (hidden + refused at checkout); scripts/preflight.ts prints it.
  */
 import {
-  buyerPrice, CURRENCIES, listPrice, MAX_PRICE_MINOR, PRODUCT_IDS, PRODUCTS, PROVIDER_FOR_CURRENCY, providerSells,
+  buyerPrice, CURRENCIES, LIFETIME_TOPUP_DISCOUNT, listPrice, MAX_PRICE_MINOR, PRODUCT_IDS, PRODUCTS, PROVIDER_FOR_CURRENCY, providerSells,
   type Currency, type EnvSource, type Plan, type PlanConfig, type ProductId,
 } from "@/lib/plans";
 
@@ -129,7 +129,9 @@ export function marginTable(plans: Record<Plan, PlanConfig>, env: EnvSource = pr
       for (const buyer of buyers) {
         const priceMinor = buyer === "everyone" ? listPrice(product, currency, env) : buyerPrice(product, currency, "LIFETIME", env);
         const verdict = priceMinor === null ? null : checkMargin(product, currency, priceMinor, plans, inputs);
-        const minList = minPassingPriceMinor(product, currency, plans, inputs);
+        const minPay = minPassingPriceMinor(product, currency, plans, inputs);
+        // For the member row: the lowest LIST price whose discounted price still passes.
+        const minList = minPay === null || buyer === "everyone" ? minPay : Math.ceil(minPay / (1 - LIFETIME_TOPUP_DISCOUNT) - EPS);
         rows.push({ product, currency, buyer, credits: fullUsageCredits(product, plans), priceMinor, minPriceMinor: minList, verdict, status: verdict ? verdict.status : "no price" });
       }
     }
@@ -147,11 +149,11 @@ export function formatMarginTable(rows: MarginRow[], inputs: MarginInputs): stri
     `FX ${inputs.fxNgnPerUsd === null ? "UNSET" : `${inputs.fxNgnPerUsd} NGN/USD`} (FX_NGN_PER_USD), minimum margin ${inputs.minMargin === null ? "INVALID" : `${(inputs.minMargin * 100).toFixed(0)}%`} (MIN_MARGIN).`,
     `Full usage: Pro monthly = 1 month's allowance, Pro yearly = 12, Lifetime = ${LIFETIME_MARGIN_MONTHS} months, top-ups = their credits. Fees and free users not included.`,
   ];
-  const cols = ["product", "cur", "buyer", "credits", "cost", "price", "revenue", "margin", "min price", "status"];
+  const cols = ["product", "cur", "buyer", "credits", "cost", "price paid", "revenue", "margin", "min list price", "status"];
   const body = rows.map((r) => [
     r.product, r.currency, r.buyer, r.credits.toLocaleString("en-US"), fmtUsd(inputs.costPerSecondUsd === null ? null : r.credits * inputs.costPerSecondUsd), fmtMinor(r.priceMinor, r.currency),
     fmtUsd(r.verdict?.revenueUsd ?? null), r.verdict?.margin == null ? "-" : `${(r.verdict.margin * 100).toFixed(1)}%`,
-    r.buyer !== "everyone" ? "" : r.minPriceMinor !== null && r.minPriceMinor > MAX_PRICE_MINOR ? "too big to store" : fmtMinor(r.minPriceMinor, r.currency),
+    r.minPriceMinor !== null && r.minPriceMinor > MAX_PRICE_MINOR ? "too big to store" : fmtMinor(r.minPriceMinor, r.currency),
     r.status === "pass" ? "PASS (on sale)" : r.status === "no price" ? "no price (hidden)" : `${r.status.toUpperCase()} (hidden): ${r.verdict?.detail ?? ""}`,
   ]);
   const w = cols.map((c, i) => Math.max(c.length, ...body.map((b) => String(b[i]).length)));

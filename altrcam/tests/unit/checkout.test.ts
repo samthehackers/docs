@@ -71,6 +71,30 @@ describe("checkout pins the exact price and currency in the pending row", () => 
   });
 });
 
+describe("the Lifetime top-up discount at checkout", () => {
+  it("a Lifetime member is charged 80% of the list price, pinned in the pending row and sent to the provider", async () => {
+    await d.update(users).set({ plan: "LIFETIME" }).where(eq(users.id, "A"));
+    expect((await buy("TOPUP_1K")).status).toBe(200);
+    expect((await buy("TOPUP_1K", "nowpayments")).status).toBe(200);
+    const [card, crypto] = await d.select().from(payments).orderBy(payments.id);
+    expect(card).toMatchObject({ amountMinor: 240000, currency: "NGN" });
+    expect(crypto).toMatchObject({ amountMinor: 240, currency: "USD" });
+    expect(calls[0].body).toMatchObject({ amount: 240000 });
+    expect(calls[1].body).toMatchObject({ price_amount: 2.4 });
+  });
+  it("everyone else pays the list price", async () => {
+    await d.update(users).set({ plan: "PRO" }).where(eq(users.id, "A"));
+    await buy("TOPUP_1K");
+    expect((await rows())[0].amountMinor).toBe(300000);
+  });
+  it("a Lifetime member cannot buy Lifetime or Pro again", async () => {
+    await d.update(users).set({ plan: "LIFETIME" }).where(eq(users.id, "A"));
+    expect(await buy("LIFETIME")).toMatchObject({ status: 409, body: { code: "already_lifetime" } });
+    expect(await buy("PRO_MONTHLY")).toMatchObject({ status: 409, body: { code: "already_lifetime" } });
+    expect(calls).toHaveLength(0);
+  });
+});
+
 describe("a product that is not on sale cannot be bought", () => {
   it("no price in that currency: refused, no pending row, the provider is never called", async () => {
     const r = await buy("TOPUP_5K", "nowpayments"); // only PRICE_TOPUP_5K_NGN is set

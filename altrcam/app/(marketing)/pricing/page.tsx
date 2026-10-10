@@ -7,7 +7,7 @@ import { accountsOpen, paymentsOpen } from "@/lib/config";
 import { getPlans } from "@/lib/plan-config";
 import { TOPUP_IDS, type ProductId } from "@/lib/plans";
 import { offer, offerPrice, pricesApproved } from "@/lib/pricing";
-import { billingDetails, SIGNUP_CLOSED } from "@/lib/public-copy";
+import { billingDetails, LIFETIME_TOPUP_LINE, SIGNUP_CLOSED } from "@/lib/public-copy";
 
 export const metadata = { title: "Pricing" };
 
@@ -25,7 +25,7 @@ export default async function Pricing() {
   const tiers: Tier[] = [
     { key: "FREE", price: "Free", cadence: "no card needed" },
     ...(pro ? [{ key: "PRO" as const, product: "PRO_MONTHLY" as const, price: offerPrice(pro), cadence: "per month", highlight: true, badge: "Subscription" }] : []),
-    ...(lifetime ? [{ key: "LIFETIME" as const, product: "LIFETIME" as const, price: offerPrice(lifetime), cadence: "one time" }] : []),
+    ...(lifetime ? [{ key: "LIFETIME" as const, product: "LIFETIME" as const, price: offerPrice(lifetime), cadence: "one time", note: LIFETIME_TOPUP_LINE }] : []),
   ];
   const topups: TopupItem[] = TOPUP_IDS.flatMap((id) => { const o = shown(id); return o ? [{ id, price: offerPrice(o) }] : []; });
   const details = billingDetails({ yearlyPrice: yearly ? offerPrice(yearly) : null, pricesApproved: pricesApproved() });
@@ -49,6 +49,7 @@ export default async function Pricing() {
       </div>
       {topups.length > 0 && <>
         <h2 className="mb-4 mt-16 text-xl font-semibold">Need more? Top up anytime.</h2>
+        {lifetime && <p className="mb-4 text-sm text-muted-foreground">{LIFETIME_TOPUP_LINE}</p>}
         <TopupList items={topups} renderCta={() => checkoutOpen ? <Link href="/billing" prefetch={false} className={buttonClass({ variant: "outline", size: "sm" })}>Buy</Link> : <p className="text-xs text-muted-foreground">Not available yet</p>} />
       </>}
       <h2 className="mb-4 mt-16 text-xl font-semibold">Billing details</h2>

@@ -120,9 +120,18 @@ export function listPrice(product: ProductId, currency: Currency, env: EnvSource
   return parseMinor(env[PRODUCTS[product].priceEnv[currency]]);
 }
 
-/** What this buyer is charged in minor units, or null when the product has no price in that currency. */
-export function buyerPrice(product: ProductId, currency: Currency, _buyerPlan?: Plan | null, env: EnvSource = process.env): number | null {
-  return listPrice(product, currency, env);
+/** Lifetime members pay this much less for top-ups. Applied at checkout and pinned in the pending payment row. */
+export const LIFETIME_TOPUP_DISCOUNT = 0.2;
+
+/** True when this buyer gets the Lifetime top-up discount on this product. */
+export const lifetimeDiscountApplies = (product: ProductId, buyerPlan: Plan | null | undefined) =>
+  buyerPlan === "LIFETIME" && PRODUCTS[product].kind === "topup";
+
+/** What this buyer is charged in minor units: the list price, less the Lifetime discount on top-ups (rounded to a whole minor unit). */
+export function buyerPrice(product: ProductId, currency: Currency, buyerPlan?: Plan | null, env: EnvSource = process.env): number | null {
+  const list = listPrice(product, currency, env);
+  if (list === null) return null;
+  return lifetimeDiscountApplies(product, buyerPlan) ? Math.round(list * (1 - LIFETIME_TOPUP_DISCOUNT)) : list;
 }
 
 export const LOW_CREDIT_RATIO = 0.1;

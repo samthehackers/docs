@@ -11,7 +11,8 @@ import { db } from "@/lib/db";
 import { payments, subscriptions } from "@/db/schema";
 import { PRODUCTS, TOPUP_IDS, type ProductId } from "@/lib/plans";
 import { getPlans } from "@/lib/plan-config";
-import { offerPrice, offersFor, payLabel } from "@/lib/pricing";
+import { discountNote, offerPrice, offersFor, payLabel } from "@/lib/pricing";
+import { LIFETIME_TOPUP_APPLIED, LIFETIME_TOPUP_LINE } from "@/lib/public-copy";
 import { money } from "@/lib/utils";
 
 export const metadata = { title: "Billing" };
@@ -34,7 +35,8 @@ export default async function Billing() {
     ...(pro.length || yearly.length ? [{ key: "PRO" as const, price: offerPrice((pro[0] ?? yearly[0])), cadence: pro.length ? "per month" : "per year", highlight: true, badge: "Subscription" }] : []),
     ...(lifetime.length ? [{ key: "LIFETIME" as const, price: offerPrice(lifetime[0]), cadence: "one time" }] : []),
   ];
-  const topups: TopupItem[] = TOPUP_IDS.flatMap((id) => { const o = offers(id); return o.length ? [{ id, price: offerPrice(o[0]) }] : []; });
+  // Lifetime members are quoted (and charged) the discounted price; the note says so and shows the list price.
+  const topups: TopupItem[] = TOPUP_IDS.flatMap((id) => { const o = offers(id); return o.length ? [{ id, price: offerPrice(o[0]), note: discountNote(o[0]) }] : []; });
   return (
     <div className="space-y-10">
       <h1 className="text-3xl font-bold">Billing</h1>
@@ -71,6 +73,7 @@ export default async function Billing() {
       {topups.length > 0 && (
         <section>
           <h2 className="mb-4 text-xl font-semibold">Top up credits</h2>
+          {(user.plan === "LIFETIME" || lifetime.length > 0) && <p className="mb-4 text-sm text-muted-foreground">{user.plan === "LIFETIME" ? LIFETIME_TOPUP_APPLIED : LIFETIME_TOPUP_LINE}</p>}
           <TopupList items={topups} renderCta={(id: ProductId) => <CheckoutButton product={id} variant="outline" options={offers(id).map((o) => ({ provider: o.provider, label: payLabel(o) }))} />} />
         </section>
       )}

@@ -28,7 +28,7 @@ export default async function Pricing() {
     ...(lifetime ? [{ key: "LIFETIME" as const, product: "LIFETIME" as const, price: offerPrice(lifetime), cadence: "one time", note: LIFETIME_TOPUP_LINE }] : []),
   ];
   const topups: TopupItem[] = TOPUP_IDS.flatMap((id) => { const o = shown(id); return o ? [{ id, price: offerPrice(o) }] : []; });
-  const details = billingDetails({ yearlyPrice: yearly ? offerPrice(yearly) : null, pricesApproved: pricesApproved() });
+  const details = billingDetails({ yearlyPrice: yearly ? offerPrice(yearly) : null, pricesApproved: pricesApproved(), lifetimeCredits: plans.LIFETIME.monthlyCredits });
   return (
     <div className="mx-auto max-w-6xl px-4 py-16">
       <h1 className="text-center text-4xl font-bold">Simple pricing. <span className="gradient-text">Credits by the second.</span></h1>

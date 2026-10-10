@@ -45,7 +45,21 @@ export const PAYMENT_METHODS_TEXT =
   "Pro subscriptions are paid through Paystack; which payment methods it offers is up to Paystack and depends on your country. " +
   "Lifetime and top-ups can be paid through Paystack or with cryptocurrency through NOWPayments.";
 
-export function billingDetails({ yearlyPrice, pricesApproved }: { yearlyPrice: string | null; pricesApproved: boolean }): BillingDetail[] {
+/**
+ * What Lifetime is, exactly as the code implements it: one payment (lib/payments/fulfil.ts sets the plan with no renewal date and
+ * the daily downgrade never touches it), the plan's own limits, its monthly allowance refilled on the purchase's monthly
+ * anniversary (lib/credits-math.ts refillDue), the top-up discount (lib/plans.ts), and a Pro subscription cancelled at Paystack.
+ */
+export function lifetimeDetail(monthlyCredits: number): string {
+  const credits = monthlyCredits > 0
+    ? `${fmtNum(monthlyCredits)} credits every month, refilled once a month counted from the day you paid (unused monthly credits don't roll over)`
+    : "no monthly credits at the moment";
+  return `A one-time payment with no renewal. It gives you the Lifetime plan's limits, ${credits}, and ${Math.round(LIFETIME_TOPUP_DISCOUNT * 100)}% off top-ups. ` +
+    "If you have a Pro subscription when you buy it, we cancel that subscription at Paystack for you; if that fails we tell you, so you can cancel it from Paystack's email. " +
+    "The Terms do not yet say how long \"lifetime\" lasts.";
+}
+
+export function billingDetails({ yearlyPrice, pricesApproved, lifetimeCredits }: { yearlyPrice: string | null; pricesApproved: boolean; lifetimeCredits: number }): BillingDetail[] {
   const yearly = yearlyPrice
     ? ` Pro is also available as a yearly subscription for ${yearlyPrice}.`
     : "";
@@ -58,7 +72,7 @@ export function billingDetails({ yearlyPrice, pricesApproved }: { yearlyPrice: s
     },
     { term: "Payment methods", text: PAYMENT_METHODS_TEXT },
     { term: "Top-ups", text: "Top-up credits never expire. Your monthly credits are used first, then top-up credits." },
-    { term: "Lifetime", text: "A one-time payment with no renewal. The Terms do not yet say how long \"lifetime\" lasts." },
+    { term: "Lifetime", text: lifetimeDetail(lifetimeCredits) },
     {
       term: "Refunds",
       text: "Payments are non-refundable except where the law requires otherwise. Refunds are not automatic: if something went wrong with a payment, contact us and it is reviewed by hand. The Terms page is still template text. See:",

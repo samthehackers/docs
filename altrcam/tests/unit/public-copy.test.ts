@@ -3,7 +3,7 @@
  * and the one place the live-video status is written down.
  */
 import { describe, expect, it } from "vitest";
-import { billingDetails, clipPlanLabels, freeCreditsLine, joinList, PAYMENT_METHODS_TEXT, planFeatures, savingSentence, SIGNUP_CLOSED } from "@/lib/public-copy";
+import { billingDetails, clipPlanLabels, freeCreditsLine, joinList, lifetimeDetail, PAYMENT_METHODS_TEXT, planFeatures, savingSentence, SIGNUP_CLOSED } from "@/lib/public-copy";
 import { CAPTURE_SIZE, DEFAULT_PLANS, type Plan, type PlanConfig } from "@/lib/plans";
 import { LIVE_AVAILABILITY } from "@/lib/availability";
 
@@ -71,7 +71,7 @@ describe("the sentence about saving", () => {
 });
 
 describe("billing details", () => {
-  const base = { yearlyPrice: "₦150,000" as string | null, pricesApproved: false };
+  const base = { yearlyPrice: "₦150,000" as string | null, pricesApproved: false, lifetimeCredits: 2000 };
   const all = (d: ReturnType<typeof billingDetails>) => d.map((x) => `${x.term}: ${x.text}`).join("\n");
   it("covers renewal, cancelling, currency, payment methods, top-ups, Lifetime and refunds", () => {
     const d = billingDetails(base);
@@ -113,6 +113,17 @@ describe("billing details", () => {
   });
   it("is honest that Lifetime is not defined yet", () => {
     expect(billingDetails(base).find((x) => x.term === "Lifetime")!.text).toMatch(/do not yet say how long/);
+  });
+  it("describes Lifetime as the code implements it: one payment, the monthly allowance and how it refills, the top-up discount, the Pro cancellation", () => {
+    const t = billingDetails(base).find((x) => x.term === "Lifetime")!.text;
+    expect(t).toMatch(/one-time payment with no renewal/);
+    expect(t).toContain("2,000 credits every month, refilled once a month counted from the day you paid");
+    expect(t).toContain("unused monthly credits don't roll over");
+    expect(t).toContain("20% off top-ups");
+    expect(t).toMatch(/we cancel that subscription at Paystack/);
+    expect(t).not.toMatch(/forever|unlimited|for life/i);
+    expect(lifetimeDetail(1500)).toContain("1,500 credits every month");
+    expect(lifetimeDetail(0)).toContain("no monthly credits at the moment");
   });
 });
 

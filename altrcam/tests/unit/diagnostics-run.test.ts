@@ -104,8 +104,12 @@ afterEach(() => { vi.useRealTimers(); });
 
 describe("a passing check", () => {
   it("records every step with timestamps, measures the video and releases everything", async () => {
+    // The session takes 700 ms: TTFF counts from the start of the connection, not from the start of the check.
+    sessionResponse = () => new Promise<Response>((res) => setTimeout(() => res(json(200, { sessionId: "11111111-1111-4111-8111-111111111111" })), 700));
     const p = start();
     await vi.advanceTimersByTimeAsync(0);
+    expect(connectMock).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(700);
     expect(connectMock).toHaveBeenCalledTimes(1);
     expect(conn.opts).toMatchObject({ sessionId: "11111111-1111-4111-8111-111111111111", inputs: { prompt: "a test prompt", enablePromptExpansion: false } });
     expect(conn.opts!.stream).toBe(camera!.stream); // the synthetic camera is what gets sent
@@ -124,7 +128,8 @@ describe("a passing check", () => {
       "answer_applied", "first_remote_candidate", "peer_connection_state", "connected", "remote_track", "remote_stream", "first_frame",
       "sampling_started", "sampling_finished", "session_ended", "finished",
     ]);
-    expect(r.steps.find((s) => s.name === "first_frame")).toMatchObject({ atMs: 2000, at: "2026-10-09T12:00:02.000Z", detail: "1280x720" });
+    expect(r.steps.find((s) => s.name === "connect_started")).toMatchObject({ atMs: 700 });
+    expect(r.steps.find((s) => s.name === "first_frame")).toMatchObject({ atMs: 2700, at: "2026-10-09T12:00:02.700Z", detail: "1280x720" });
     expect(r.steps.every((s, i) => i === 0 || s.atMs >= r.steps[i - 1].atMs)).toBe(true);
     expect(r.serverMessages).toEqual(["type=answer"]);
     expect(r.counts).toEqual({ localCandidates: 2, remoteCandidates: 1, serverMessages: 1 });

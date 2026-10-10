@@ -90,6 +90,16 @@ export function purchaseBlock(
   return null;
 }
 
+/** Where checkout resumes after sign-up: Billing with that product pre-selected (validated there against PRODUCT_IDS). */
+export const resumeHref = (product: ProductId) => `/billing?plan=${product}#checkout`;
+
+/**
+ * The sign-up link for a product picked on /pricing. `plan` names the product; `redirect_url` is the post-sign-up destination
+ * that the current sign-in widget (Clerk) follows by itself, so the auth code needs no change. A replacement auth flow should
+ * honour either parameter, sending only to same-site paths.
+ */
+export const signUpHref = (product: ProductId) => `/sign-up?plan=${product}&redirect_url=${encodeURIComponent(resumeHref(product))}`;
+
 /** Which providers are configured on this deployment (from lib/config capabilities). */
 export interface ProvidersOpen { paystack: boolean; nowpayments: boolean }
 

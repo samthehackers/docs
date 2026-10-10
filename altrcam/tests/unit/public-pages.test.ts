@@ -10,7 +10,12 @@ import { renderToStaticMarkup } from "react-dom/server";
 import * as React from "react";
 import type { ReactElement } from "react";
 
-const h = vi.hoisted(() => ({ me: null as string | null, authCalls: 0, authThrows: false as boolean | Error, plans: null as null | Record<string, unknown> }));
+const h = vi.hoisted(() => ({ me: null as string | null, authCalls: 0, authThrows: false as boolean | Error, plans: null as null | Record<string, unknown>,
+  account: null as null | { plan: "FREE" | "PRO" | "LIFETIME"; planRenewsAt: Date | null; hasActiveSubscription: boolean } }));
+// The pricing page reads a signed-in visitor's plan from the database; here it is handed in.
+vi.mock("@/lib/billing-account", () => ({ billingAccount: async () => h.account }));
+// CheckoutButton is a client component that uses the router.
+vi.mock("next/navigation", async (orig) => ({ ...(await orig<typeof import("next/navigation")>()), useRouter: () => ({ refresh: () => {}, push: () => {} }) }));
 // The Clerk widgets are stubbed so the sign-in and sign-up pages can be rendered here.
 vi.mock("@clerk/nextjs", () => ({ SignUp: () => "CLERK_SIGNUP_FORM", SignIn: () => "CLERK_SIGNIN_FORM" }));
 vi.mock("@clerk/nextjs/server", () => ({ auth: async () => { h.authCalls++; if (h.authThrows) throw h.authThrows instanceof Error ? h.authThrows : new Error("clerk down"); return { userId: h.me }; } }));
@@ -46,7 +51,7 @@ const PRICES_FIXTURE = {
 };
 const ENV = { ...process.env };
 beforeEach(() => {
-  h.me = null; h.authCalls = 0; h.authThrows = false;
+  h.me = null; h.authCalls = 0; h.authThrows = false; h.account = null;
   h.plans = structuredClone(DEFAULT_PLANS); // the pages get these limits; no database is touched
   process.env.DATABASE_URL = "postgres://unused/ignored"; // "accounts are open" needs a database to be configured
   process.env.PAYSTACK_SECRET_KEY = "sk_test_x"; // "checkout is open" needs a payment provider
@@ -269,11 +274,11 @@ describe("review follow-ups: the pages that ask for money, and sentences tied to
   it("the FAQ payment answer is the same text as the billing details", () => {
     expect(plain(faq())).toContain(PAYMENT_METHODS_TEXT);
   });
-  it("the FAQ links to contact us, and the pricing buttons go to billing and sign-up", async () => {
+  it("the FAQ links to contact us, and the pricing buttons go to sign-up, carrying the plan through to checkout", async () => {
     expect(hrefs(faq())).toContain("/contact");
-    const h2 = hrefs(await pricing());
-    expect(h2).toContain("/billing");
+    const h2 = hrefs(await pricing()).map((x) => x.replace(/&amp;/g, "&"));
     expect(h2).toContain("/sign-up");
+    for (const id of ["PRO_MONTHLY", "LIFETIME", "TOPUP_1K"]) expect(h2).toContain(`/sign-up?plan=${id}&redirect_url=${encodeURIComponent(`/billing?plan=${id}#checkout`)}`);
   });
   it("steps 3 and 4 state what is billed and when, and where the video goes", () => {
     const step = (n: number) => HOW_IT_WORKS_STEPS[n - 1].b;
@@ -517,5 +522,62 @@ describe("one answer to 'is sign-up open', everywhere (review of the account-cla
     expect(l).toContain("Be anyone.");
     expect(plain(await pricing())).toContain("Camera feed requested at 640×360"); // the default Free plan, from the code defaults
     expect(h.authCalls).toBe(0);
+  });
+});
+
+describe("pricing CTAs, the currency toggle and the heading outline (A4.6)", () => {
+  const pricingIn = async (currency?: string) => html((await Pricing({ searchParams: Promise.resolve(currency ? { currency } : {}) })) as ReactElement);
+  it("NGN is the default view; ?currency=USD shows crypto prices, and the toggle marks the current view", async () => {
+    const ngn = await pricingIn();
+    expect(plain(ngn)).toMatch(/(₦|NGN\s?)99,000 one time/);
+    expect(ngn).toMatch(/aria-current="page"[^>]*>Card · NGN|>Card · NGN<\/a>/);
+    expect(ngn).toContain('aria-label="Price currency"');
+    const usd = await pricingIn("USD");
+    expect(plain(usd)).toContain("$99 one time");
+    expect(plain(usd)).toContain("$3"); // 1,000 credits in USD
+    expect(plain(usd)).toContain("Charged in NGN by card: crypto can't pay for a subscription.");
+    expect(usd).toMatch(/<a[^>]*aria-current="page"[^>]*>Crypto · USD<\/a>/);
+    expect(plain(await pricingIn("EUR"))).toMatch(/(₦|NGN\s?)99,000 one time/); // anything else falls back to NGN
+  });
+  it("a product priced only in the other currency is still shown, marked as such", async () => {
+    delete process.env.PRICE_LIFETIME_NGN;
+    expect(plain(await pricingIn())).toContain("Only with crypto, priced in USD.");
+  });
+  it("plan names are h3s under an h2, never directly under the h1", async () => {
+    const p = await pricingIn();
+    const firstH2 = p.indexOf("<h2"), firstH3 = p.indexOf("<h3");
+    expect(firstH2).toBeGreaterThan(-1);
+    expect(firstH2).toBeLessThan(firstH3);
+  });
+  it("signed in on Free: Free says 'Open the studio' and marks the current plan; paid plans are checkout buttons, not links", async () => {
+    h.me = "user_1"; h.account = { plan: "FREE", planRenewsAt: null, hasActiveSubscription: false };
+    const p = await pricingIn();
+    expect(plain(p)).toContain("Open the studio");
+    expect(plain(p)).toContain("Current plan");
+    expect(plain(p)).toMatch(/Choose Pro · (₦|NGN\s?)15,000/);
+    expect(hrefs(p).some((x) => x.startsWith("/sign-up"))).toBe(false);
+    expect(hrefs(p)).toContain("/studio");
+  });
+  it("signed in on Pro with a subscription: Pro shows 'Current plan' and is not offered again", async () => {
+    h.me = "user_1"; h.account = { plan: "PRO", planRenewsAt: new Date(Date.now() + 9 * 86_400_000), hasActiveSubscription: true };
+    const t = plain(await pricingIn());
+    expect(t).not.toMatch(/Choose Pro ·/);
+    expect(t).toContain("Current plan");
+    expect(t).toMatch(/Card · (₦|NGN\s?)99,000/); // Lifetime is still on offer
+  });
+  it("signed in on Lifetime: plans read 'Included in your Lifetime plan' and top-ups show the member price", async () => {
+    h.me = "user_1"; h.account = { plan: "LIFETIME", planRenewsAt: null, hasActiveSubscription: false };
+    const t = plain(await pricingIn());
+    expect(t).toContain("Included in your Lifetime plan");
+    expect(t).toMatch(/(₦|NGN\s?)2,400/);
+    expect(t).toMatch(/20% Lifetime discount/);
+  });
+  it("the closed states stay: no payment provider = 'Not available yet' even when signed in; no accounts = no sign-up links", async () => {
+    h.me = "user_1"; h.account = { plan: "FREE", planRenewsAt: null, hasActiveSubscription: false };
+    delete process.env.PAYSTACK_SECRET_KEY;
+    expect(plain(await pricingIn())).toContain("Not available yet");
+    h.me = null; delete process.env.DATABASE_URL;
+    const p = await pricingIn();
+    expect(hrefs(p).some((x) => x.startsWith("/sign-up"))).toBe(false);
   });
 });

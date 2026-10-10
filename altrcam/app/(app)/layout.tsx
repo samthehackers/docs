@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { cookies } from "next/headers";
-import { UserButton } from "@clerk/nextjs";
 import { Logo } from "@/components/logo";
+import { AccountMenu } from "@/components/account-menu";
 import { NotificationBell } from "@/components/notification-bell";
 import { requireAppUser } from "@/lib/session-user";
 import { db } from "@/lib/db";
@@ -38,7 +38,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           </nav>
           <div className="flex items-center gap-2">
             <NotificationBell unread={unread} initial={items.map((n) => ({ ...n, readAt: n.readAt?.toISOString() ?? null, createdAt: n.createdAt.toISOString() }))} />
-            <UserButton />
+            <AccountMenu email={user.email} />
           </div>
         </div>
         <nav aria-label="Main mobile" className="flex gap-1 overflow-x-auto border-t px-2 py-1 text-sm md:hidden">

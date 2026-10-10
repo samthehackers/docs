@@ -3,6 +3,7 @@
  * Used so public pages render without credentials and features that need a missing one say so honestly.
  */
 const has = (...names: string[]) => names.every((n) => Boolean(process.env[n]));
+const databaseConfigured = () => has("DATABASE_URL") || has("POSTGRES_URL") || has("POSTGRES_PRISMA_URL");
 
 export const supabaseConfigured = () => has("NEXT_PUBLIC_SUPABASE_URL", "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY");
 /** Kept as a compatibility alias for older feature gates during the auth migration. */
@@ -11,7 +12,7 @@ export const clerkConfigured = supabaseConfigured;
 export function capabilities() {
   return {
     auth: clerkConfigured(),
-    database: has("DATABASE_URL"), // presence only: a wrong, paused or unmigrated database is not detected
+    database: databaseConfigured(), // presence only: a wrong, paused or unmigrated database is not detected
     storage: has("SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY"),
     liveTransformation: has("FAL_KEY"),
     paystack: has("PAYSTACK_SECRET_KEY"),
@@ -28,7 +29,7 @@ export function capabilities() {
  * that then fails at the first app page (no database to hold their credits). This is environment presence only: a wrong, paused or
  * unmigrated database is not detected. Every public page that offers sign-up uses this one answer, so they cannot disagree.
  */
-export const accountsOpen = () => supabaseConfigured() && has("DATABASE_URL");
+export const accountsOpen = () => supabaseConfigured() && databaseConfigured();
 
 /** Whether checkout can work at all: accounts, and at least one payment provider. */
 export const paymentsOpen = () => accountsOpen() && (has("PAYSTACK_SECRET_KEY") || has("NOWPAYMENTS_API_KEY", "NOWPAYMENTS_IPN_SECRET"));

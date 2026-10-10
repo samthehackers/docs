@@ -25,7 +25,7 @@ import type { DB } from "@/lib/db";
 import { auditLog, creditLedger, studioSessions, users } from "@/db/schema";
 import { grantCredits, ledgerBalance } from "@/lib/credits";
 import { CONNECT_GRACE_SECONDS, NEVER_LIVE_LIMIT, NEVER_LIVE_WINDOW_SECONDS, REFUNDS_PER_DAY } from "@/lib/plans";
-import { activeSession, closeOpenSessions, sweepStaleSessions } from "@/lib/metering";
+import { activeSession, closeOpenSessions, meterSession, sweepStaleSessions } from "@/lib/metering";
 import * as liveRoute from "@/app/api/studio/session/live/route";
 import * as heartbeatRoute from "@/app/api/studio/session/heartbeat/route";
 import * as endRoute from "@/app/api/studio/session/end/route";
@@ -106,6 +106,41 @@ describe("POST /api/studio/session/live", () => {
 
 const GRACE = CONNECT_GRACE_SECONDS;
 const balance = async (u = "u") => (await ledgerBalance(d, u)).total;
+
+describe("debit maths across heartbeats (A3.2)", () => {
+  it("bills whole live seconds from live_at, carries fractions forward, and the end bills only the rest", async () => {
+    const id = await session("u", 40, 30); // 10 s connecting (free), then live
+    const liveAt = (await row(id)).liveAt!.getTime();
+    const at = (s: number) => new Date(liveAt + s * 1000);
+    const steps: [number, number][] = [[9.6, 9], [19.2, 19], [19.9, 19], [25.95, 25]];
+    for (const [t, total] of steps.slice(0, 3)) {
+      await meterSession(id, "u", { now: at(t) });
+      expect((await row(id)).secondsBilled).toBe(total);
+    }
+    await meterSession(id, "u", { now: at(25.95), end: "user" });
+    await meterSession(id, "u", { now: at(60), end: "user" }); // a repeated end bills nothing more
+    expect((await row(id)).secondsBilled).toBe(25);
+    expect(await balance()).toBe(5000 - 25);
+  });
+
+  it("the plan's session limit counts from live_at and closes the session at the limit", async () => {
+    const id = await session("u", 200, 180, { maxSeconds: 120 });
+    const liveAt = (await row(id)).liveAt!.getTime();
+    const m = await meterSession(id, "u", { now: new Date(liveAt + 150_000) });
+    expect(m).toMatchObject({ continue: false, reason: "session_limit", secondsBilled: 120 });
+    expect(await balance()).toBe(5000 - 120);
+  });
+
+  it("the balance caps the debit, never goes below zero, and closes the session", async () => {
+    await d.execute(sql`truncate credit_ledger restart identity`);
+    await d.execute(sql`update users set credits_monthly = 0, credits_purchased = 0`);
+    await grantCredits(d, "u", 12, "monthly", "seed");
+    const id = await session("u", 40, 30);
+    const m = await meterSession(id, "u");
+    expect(m).toMatchObject({ continue: false, reason: "credits", remaining: 0, secondsBilled: 12 });
+    expect(await balance()).toBe(0);
+  });
+});
 
 describe("a session that never goes live within the connect window (A3.3)", () => {
   it("heartbeat: while connecting it is kept open and debits nothing", async () => {

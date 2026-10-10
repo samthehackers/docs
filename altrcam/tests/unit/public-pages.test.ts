@@ -420,8 +420,8 @@ describe("one answer to 'is sign-up open', everywhere (review of the account-cla
         expect(plain(pr)).toContain("Start free");
         for (const s of [l, hw]) expect(plain(s)).not.toContain("Sign-up isn't open");
       } else {
-        expect(plain(su)).toContain("Accounts aren't available on this deployment yet");
-        expect(plain(si)).toContain("Accounts aren't available on this deployment yet");
+        expect(plain(su)).toContain("Account access is not configured for this deployment yet");
+        expect(plain(si)).toContain("Account access is not configured for this deployment yet");
         expect(plain(su)).not.toContain("CLERK_SIGNUP_FORM");
         for (const s of [l, hw]) { expect(hrefs(s)).not.toContain("/sign-up"); expect(plain(s)).toContain("Sign-up isn't open on this deployment yet."); }
         expect(hrefs(hd)).not.toContain("/sign-up"); expect(hrefs(hd)).not.toContain("/sign-in");
@@ -434,7 +434,7 @@ describe("one answer to 'is sign-up open', everywhere (review of the account-cla
   it("partial Clerk configuration (one key) counts as not configured, on the landing page and the auth pages", async () => {
     delete process.env.CLERK_SECRET_KEY;
     expect(plain(await landing())).toContain("Sign-up isn't open on this deployment yet.");
-    expect(plain(html((await SignUpPage()) as ReactElement))).toContain("Accounts aren't available");
+    expect(plain(html((await SignUpPage()) as ReactElement))).toContain("Account access is not configured");
     process.env.CLERK_SECRET_KEY = "sk_test_x"; delete process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY;
     expect(plain(await landing())).toContain("Sign-up isn't open on this deployment yet.");
   });

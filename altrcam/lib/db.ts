@@ -1,6 +1,7 @@
 import postgres from "postgres";
 import { drizzle } from "drizzle-orm/postgres-js";
 import * as schema from "@/db/schema";
+import { cleanDatabaseUrl, databaseUrl, postgresOptions } from "@/lib/database-url";
 
 declare global {
   // eslint-disable-next-line no-var
@@ -9,10 +10,12 @@ declare global {
 
 function client() {
   if (!globalThis.__sql) {
-    const url = process.env.DATABASE_URL;
-    if (!url) throw new Error("DATABASE_URL is not set");
+    const raw = databaseUrl();
+    if (!raw) throw new Error("No database URL: set DATABASE_URL (or POSTGRES_URL from the Supabase integration)");
+    // Integration URLs carry parameters postgres.js would send to the server as startup parameters (and fail); strip them.
     // prepare:false is required for Supabase's transaction pooler.
-    globalThis.__sql = postgres(url, { prepare: false, max: 5 });
+    const { url } = cleanDatabaseUrl(raw);
+    globalThis.__sql = postgres(url, postgresOptions(url, { max: 5 }));
   }
   return globalThis.__sql;
 }

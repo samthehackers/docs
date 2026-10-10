@@ -140,7 +140,7 @@ The project exists: **`altrcam`**, team *TrustGeeks Security lnc teams* (`geeeks
 | Install / Build / Output | defaults (`npm install`, `next build`, `.next`) |
 | Ignored Build Step | `git diff --quiet HEAD^ HEAD -- .` (builds only when `altrcam/` changed, so docs commits don't trigger it) |
 | Vercel Authentication | currently "all except custom domains": previews are private, the production domain is public. Decide whether you want that |
-| Crons | read from `altrcam/vercel.json`: monthly refill and daily retention only (both fine on Hobby). The **5-minute stale-session sweep is not a Vercel cron**: it runs from GitHub Actions, see section 4b. Check your plan allows the 300 s function limit set on the refill/retention routes |
+| Crons | read from `altrcam/vercel.json`: daily refill check and daily retention only (both fine on Hobby). The **5-minute stale-session sweep is not a Vercel cron**: it runs from GitHub Actions, see section 4b. Check your plan allows the 300 s function limit set on the refill/retention routes |
 | Domains | add `altrcam.com` and `altrcam.ai` (the app redirects `.ai` to `.com`) |
 | Region | pick the one closest to your Supabase region |
 

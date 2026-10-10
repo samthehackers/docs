@@ -89,6 +89,16 @@ suite("real PostgreSQL (production driver)", () => {
       expect((await ledgerBalance(db(), "a")).monthly).toBe(300);
     });
 
+    it("refill: a Lifetime member is refilled on the purchase's monthly anniversary (timestamps read through postgres-js)", async () => {
+      await user("life", { plan: "LIFETIME" });
+      await db().insert(creditLedger).values({ userId: "life", delta: 2000, bucket: "monthly", reason: "monthly_refill", refType: "refill", refId: "pay:alt_life", createdAt: ago(40 * DAY) });
+      await db().update(users).set({ creditsMonthly: 2000 }).where(eq(users.id, "life"));
+      expect((await (await refillRoute(cron("refill"))).json()).refilled).toBe(1);
+      const refs = (await db().select().from(creditLedger).where(eq(creditLedger.userId, "life"))).map((r) => r.refId);
+      expect(refs).toContain("cycle:pay:alt_life:1");
+      expect((await (await refillRoute(cron("refill"))).json()).refilled).toBe(0);
+    });
+
     it("stale-sessions: closes abandoned sessions billed only to their last heartbeat, leaves live ones open, is idempotent", async () => {
       await user("u"); await grantCredits(db(), "u", 500, "monthly", "seed");
       await db().insert(studioSessions).values([

@@ -67,7 +67,7 @@ export function troubleshootingItems(plans: Record<Plan, PlanConfig>): Troublesh
         <>
           <p><b>1 credit = 1 second</b> of live video. Our server counts the seconds while a session is open, and nothing is spent while you are not live.</p>
           <Ul>
-            <li><b>Monthly credits</b> come with your plan ({fmtNum(plans.FREE.monthlyCredits)} on Free, {fmtNum(plans.PRO.monthlyCredits)} on Pro). They refill at the start of each month (UTC). Unused monthly credits expire and do not roll over.</li>
+            <li><b>Monthly credits</b> come with your plan ({fmtNum(plans.FREE.monthlyCredits)} on Free, {fmtNum(plans.PRO.monthlyCredits)} on Pro, {fmtNum(plans.LIFETIME.monthlyCredits)} on Lifetime). Free credits refill at the start of each month (UTC). Paid plans refill once a month counted from the day you paid: Pro monthly when it renews, Pro yearly and Lifetime on that day each month (checked once a day, UTC). Unused monthly credits expire and do not roll over.</li>
             <li><b>Purchased credits</b> come from top-ups, never expire, and are used only after your monthly credits run out.</li>
             <li>When the balance reaches zero the session stops by itself. To keep going, top up or upgrade on the <A href="/billing">Billing</A> page, or wait for the next monthly refill.</li>
             <li>The <A href="/dashboard">Dashboard</A> shows your balance split by kind, how much of your monthly allowance you have used, and your recent sessions with the credits each one used.</li>

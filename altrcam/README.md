@@ -57,7 +57,7 @@ Plan limits have defaults in [`lib/plans.ts`](./lib/plans.ts) and can be overrid
 
 **fal.ai:** create an API key → `FAL_KEY`. The browser never sees it; it talks to `/api/fal/proxy`, which only forwards realtime-token requests for the Lucy app and only for a signed-in user with an open studio session.
 
-**Vercel:** `vercel.json` registers crons: `/api/cron/refill` (monthly) and `/api/cron/retention` (daily: history purge + lapsed-plan downgrade). `/api/cron/stale-sessions` runs every 5 minutes from GitHub Actions (`.github/workflows/altrcam-sweep.yml`; Hobby only allows daily Vercel crons). It stays off until the repo variable `ALTRCAM_URL` and secret `CRON_SECRET` are set; see `GO_LIVE.md` section 4b.
+**Vercel:** `vercel.json` registers crons: `/api/cron/refill` (daily: refills that are due; Free on the 1st of the month, paid plans on the monthly anniversary of the payment) and `/api/cron/retention` (daily: history purge + lapsed-plan downgrade). `/api/cron/stale-sessions` runs every 5 minutes from GitHub Actions (`.github/workflows/altrcam-sweep.yml`; Hobby only allows daily Vercel crons). It stays off until the repo variable `ALTRCAM_URL` and secret `CRON_SECRET` are set; see `GO_LIVE.md` section 4b.
 
 ## Testing locally
 

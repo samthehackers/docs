@@ -11,8 +11,9 @@ vi.mock("@/lib/db", async (orig) => ({ ...(await orig<typeof import("@/lib/db")>
 
 import { testDb } from "./helpers";
 import type { DB } from "@/lib/db";
-import { payments, users } from "@/db/schema";
+import { payments, subscriptions, users } from "@/db/schema";
 import * as checkout from "@/app/api/payments/checkout/route";
+import { appUrlUsable } from "@/lib/config";
 
 let d: DB;
 beforeAll(async () => { d = await testDb(); h.db = d; }, 60_000);
@@ -128,5 +129,48 @@ describe("a product that is not on sale cannot be bought", () => {
   });
   it("an unknown product id is rejected as invalid input", async () => {
     expect((await buy("FREE_MONEY")).status).toBe(400);
+  });
+});
+
+describe("billing defects from the audit", () => {
+  it("BLOCKER: a Pro subscriber cannot start a second subscription (409, nothing created, provider not called)", async () => {
+    await d.update(users).set({ plan: "PRO", planRenewsAt: new Date(Date.now() + 20 * 86_400_000) }).where(eq(users.id, "A"));
+    await d.insert(subscriptions).values({ userId: "A", provider: "paystack", providerSubId: "SUB_1", plan: "PRO", status: "active" });
+    for (const product of ["PRO_MONTHLY", "PRO_YEARLY"]) {
+      const r = await buy(product);
+      expect(r.status).toBe(409);
+      expect(r.body).toMatchObject({ code: "already_subscribed" });
+      expect(r.body.error).toMatch(/already have an active Pro subscription/);
+    }
+    expect(await rows()).toHaveLength(0);
+    expect(calls).toHaveLength(0);
+    expect((await buy("TOPUP_1K")).status).toBe(200); // top-ups are still fine
+  });
+  it("a cancelled Pro whose paid period is still running is refused too, with the end date", async () => {
+    await d.update(users).set({ plan: "PRO", planStatus: "cancelling", planRenewsAt: new Date("2099-03-04T00:00:00Z") }).where(eq(users.id, "A"));
+    const r = await buy("PRO_MONTHLY");
+    expect(r.status).toBe(409);
+    expect(r.body.error).toMatch(/paid until Mar 4, 2099/);
+  });
+  it("a failed checkout start marks the row failed and answers 502 'nothing was charged', not 'Internal error'", async () => {
+    providerFails = true;
+    const r = await buy("TOPUP_1K");
+    expect(r.status).toBe(502);
+    expect(r.body.error).toBe("Couldn't reach the payment provider. Nothing was charged.");
+    const [p] = await rows();
+    expect(p.status).toBe("failed");
+  });
+  it("refuses with 503 before creating anything when NEXT_PUBLIC_APP_URL is unset, or not https in production", async () => {
+    delete process.env.NEXT_PUBLIC_APP_URL;
+    expect(await buy("TOPUP_1K")).toMatchObject({ status: 503, body: { code: "app_url" } });
+    process.env.NEXT_PUBLIC_APP_URL = "not a url";
+    expect(await buy("TOPUP_1K")).toMatchObject({ status: 503, body: { code: "app_url" } });
+    expect(await rows()).toHaveLength(0);
+    // the rule itself (the route can't run as production here: the rate limiter insists on Upstash there)
+    expect(appUrlUsable("http://altrcam.test", true)).toBe(false);
+    expect(appUrlUsable("https://altrcam.com", true)).toBe(true);
+    expect(appUrlUsable("http://localhost:3000", false)).toBe(true);
+    expect(appUrlUsable(undefined, false)).toBe(false);
+    expect(calls).toHaveLength(0);
   });
 });

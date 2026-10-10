@@ -4,7 +4,7 @@ import { eq } from "drizzle-orm";
 import { handle, HttpError, parseBody, requireUserId } from "@/lib/api";
 import { db } from "@/lib/db";
 import { users } from "@/db/schema";
-import { deleteAccount, getUserRow } from "@/lib/users";
+import { deleteAccount, getUserRow, SubscriptionCancelError } from "@/lib/users";
 
 export const PATCH = handle(async (req: Request) => {
   const userId = await requireUserId();
@@ -19,6 +19,13 @@ export const DELETE = handle(async (req: Request) => {
   const user = await getUserRow(userId);
   if (!user) throw new HttpError(404, "Not found");
   if (b.confirm !== "DELETE") throw new HttpError(400, "Type DELETE to confirm");
-  await deleteAccount(userId, { deleteClerk: true });
+  try {
+    await deleteAccount(userId, { deleteClerk: true, onCancelFailure: "abort" });
+  } catch (e) {
+    if (e instanceof SubscriptionCancelError) {
+      throw new HttpError(502, "We couldn't cancel your Pro subscription with the payment provider, so your account was not deleted (deleting it now could leave you being charged). Nothing was changed. Please try again in a few minutes or contact support.", { code: "cancel_failed" });
+    }
+    throw e;
+  }
   return NextResponse.json({ ok: true });
 });

@@ -31,4 +31,13 @@ export const accountsOpen = () => clerkConfigured() && has("DATABASE_URL");
 /** Whether checkout can work at all: accounts, and at least one payment provider. */
 export const paymentsOpen = () => accountsOpen() && (has("PAYSTACK_SECRET_KEY") || has("NOWPAYMENTS_API_KEY", "NOWPAYMENTS_IPN_SECRET"));
 
+/** NEXT_PUBLIC_APP_URL must be set; in production it must be https. */
+export function appUrlUsable(v = process.env.NEXT_PUBLIC_APP_URL, production = process.env.NODE_ENV === "production") {
+  if (!v) return false;
+  try {
+    const u = new URL(v);
+    return production ? u.protocol === "https:" : u.protocol === "https:" || u.protocol === "http:";
+  } catch { return false; }
+}
+
 export type Capabilities = ReturnType<typeof capabilities>;

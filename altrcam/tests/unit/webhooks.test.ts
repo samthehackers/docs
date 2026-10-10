@@ -142,6 +142,16 @@ describe("Paystack: charge.success against the pending row", () => {
     await paystack(charge("alt_ref1", { amount: 300000, status: "success" }));
     expect((await ledgerBalance(d, "A")).total).toBe(0);
   });
+  it("out of order: a checkout already marked abandoned or failed that is paid late is still honoured, once", async () => {
+    for (const status of ["abandoned", "failed"]) {
+      await d.execute(sql`truncate payments, webhook_events, credit_ledger restart identity cascade`);
+      await d.update(users).set({ creditsMonthly: 0, creditsPurchased: 0 }).where(eq(users.id, "A"));
+      await pending({ status }); paystackTx.alt_ref1 = tx();
+      await paystack(charge()); await paystack(charge());
+      expect((await row()).status, status).toBe("success");
+      expect((await ledgerBalance(d, "A")).purchased, status).toBe(1000);
+    }
+  });
   it("a reference Paystack doesn't confirm as paid grants nothing", async () => {
     await pending(); paystackTx.alt_ref1 = tx({ status: "abandoned" });
     await paystack(charge());

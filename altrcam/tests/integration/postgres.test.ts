@@ -71,9 +71,15 @@ suite("real PostgreSQL (production driver)", () => {
         { userId: "old-free", title: "ancient", createdAt: ago(30 * DAY) }, // FREE keeps 7 days
         { userId: "old-free", title: "recent", createdAt: ago(1 * DAY) },
       ]); // no thumbnail/export paths, so nothing is sent to storage
+      await db().insert(payments).values([
+        { userId: "old-free", provider: "paystack", reference: "alt_stale", kind: "topup", product: "TOPUP_1K", amountMinor: 1, currency: "NGN", status: "pending", createdAt: ago(2 * DAY) },
+        { userId: "old-free", provider: "paystack", reference: "alt_fresh", kind: "topup", product: "TOPUP_1K", amountMinor: 1, currency: "NGN", status: "pending", createdAt: ago(MIN) },
+      ]);
       const res = await retentionRoute(cron("retention"));
       expect(res.status).toBe(200);
-      expect(await res.json()).toEqual({ purged: 1, downgraded: 1 });
+      expect(await res.json()).toEqual({ purged: 1, downgraded: 1, abandoned: 1 });
+      expect((await db().select().from(payments).where(eq(payments.reference, "alt_stale")))[0].status).toBe("abandoned");
+      expect((await db().select().from(payments).where(eq(payments.reference, "alt_fresh")))[0].status).toBe("pending");
       expect((await db().select().from(transformations)).map((t) => t.title)).toEqual(["recent"]);
     });
 

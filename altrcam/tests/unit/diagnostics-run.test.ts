@@ -29,14 +29,16 @@ class FakeVideo {
 /** A peer whose inbound video decodes `fps` frames per second of fake time from when `startDecoding()` is called. */
 class StatsPC {
   signalingState = "stable"; connectionState = "new"; iceConnectionState = "new"; iceGatheringState = "new";
-  fps = 25; lossPerSec = 1; recvPerSec = 99; decodeFrom: number | null = null;
+  fps = 25; lossPerSec = 1; recvPerSec = 99; decodeFrom: number | null = null; frozenAt: number | null = null;
   listeners: [string, () => void][] = [];
   addEventListener(t: string, cb: () => void, o?: { signal?: AbortSignal }) { if (!o?.signal?.aborted) this.listeners.push([t, cb]); o?.signal?.addEventListener("abort", () => { this.listeners = this.listeners.filter(([, c]) => c !== cb); }); }
   fire(t: string) { for (const [n, cb] of this.listeners) if (n === t) cb(); }
   startDecoding() { this.decodeFrom = Date.now(); }
+  /** The video freezes: no more frames are decoded from now on. */
+  freeze() { this.frozenAt = Date.now(); }
   close() { this.signalingState = "closed"; this.connectionState = "closed"; }
   async getStats() {
-    const s = this.decodeFrom === null ? 0 : (Date.now() - this.decodeFrom) / 1000;
+    const s = this.decodeFrom === null ? 0 : ((this.frozenAt ?? Date.now()) - this.decodeFrom) / 1000;
     return new Map<string, unknown>([
       ["in", { type: "inbound-rtp", kind: "video", framesDecoded: Math.floor(s * this.fps), framesPerSecond: this.fps, frameWidth: 1280, frameHeight: 720, jitter: 0.02, packetsLost: Math.floor(s * this.lossPerSec), packetsReceived: Math.floor(s * this.recvPerSec), bytesReceived: 1000 }],
       ["au", { type: "inbound-rtp", kind: "audio", framesDecoded: 999999 }],
@@ -126,7 +128,7 @@ describe("a passing check", () => {
       "synthetic_camera_started", "session_created", "connect_started",
       "token_requested", "token_received", "offer_created", "offer_sent", "first_local_candidate", "server_message", "outbox_flushed",
       "answer_applied", "first_remote_candidate", "peer_connection_state", "connected", "remote_track", "remote_stream", "first_frame",
-      "sampling_started", "sampling_finished", "session_ended", "finished",
+      "sampling_started", "sampling_finished", "ending_session", "session_ended", "finished",
     ]);
     expect(r.steps.find((s) => s.name === "connect_started")).toMatchObject({ atMs: 700 });
     expect(r.steps.find((s) => s.name === "first_frame")).toMatchObject({ atMs: 2700, at: "2026-10-09T12:00:02.700Z", detail: "1280x720" });
@@ -135,7 +137,7 @@ describe("a passing check", () => {
     expect(r.counts).toEqual({ localCandidates: 2, remoteCandidates: 1, serverMessages: 1 });
     expect(r.metrics).toMatchObject({
       timeToFirstFrameMs: 2000, firstFrameSource: "requestVideoFrameCallback", resolution: { width: 1280, height: 720 },
-      fps: 25, rttMs: { avg: 50, max: 50 }, jitterMs: { avg: 20, max: 20 }, packetLossPct: 1, sampleMs: 10000,
+      fps: 25, minIntervalFps: 25, rttMs: { avg: 50, max: 50 }, jitterMs: { avg: 20, max: 20 }, packetLossPct: 1, sampleMs: 10000,
     });
     expect(r.samples).toHaveLength(11);
     expect(r.failure).toBeNull();
@@ -231,7 +233,7 @@ describe("failing checks", () => {
     await handshake(); // connected, a stream arrived, but no frame is ever presented
     await vi.advanceTimersByTimeAsync(FIRST_FRAME_WAIT_MS + 1000);
     const r = await p;
-    expect(r.failure).toEqual({ code: "no_first_frame", message: `No transformed video frame within ${FIRST_FRAME_WAIT_MS / 1000} s, although the connection was established` });
+    expect(r.failure).toEqual({ code: "no_first_frame", message: `No video frame within ${FIRST_FRAME_WAIT_MS / 1000} s, although the connection was established` });
     expect(conn.closed).toBe(1);
     expect(r.cleanup.sessionEnded).toBe(true);
   });
@@ -282,6 +284,54 @@ describe("failing checks", () => {
   });
 });
 
+describe("a connection that freezes or drops inside the sample window fails", () => {
+  /** Pass the handshake, show the first frame at 30 fps, then run `during` this far into the sample window. */
+  async function freezeAt(ms: number, during: () => void) {
+    pc.fps = 30;
+    const p = start();
+    await vi.advanceTimersByTimeAsync(0);
+    await handshake(); pc.startDecoding(); video.frame();
+    await vi.advanceTimersByTimeAsync(ms);
+    during();
+    await vi.advanceTimersByTimeAsync(PASS_CRITERIA.sampleMs + 2000);
+    return p;
+  }
+  const disconnect = () => { pc.connectionState = "disconnected"; pc.fire("connectionstatechange"); };
+
+  it("what connectLucy really does when the peer drops: \"Reconnecting…\" and no failure until 15 s later", async () => {
+    // The review's case: 30 fps for 4.5 s, then a freeze and a disconnect. The average alone would still be 13.5 fps.
+    const r = await freezeAt(4500, () => { pc.freeze(); disconnect(); conn.opts!.onState("connecting", "Reconnecting…"); });
+    expect(r.status).toBe("fail");
+    expect(r.failure).toEqual({ code: "connection_interrupted", message: "The connection was interrupted during the sample (peer disconnected)" });
+    expect(r.cleanup).toMatchObject({ connectionClosed: true, sessionEnded: true });
+  });
+
+  it("only the \"Reconnecting…\" report (no peer event seen)", async () => {
+    const r = await freezeAt(4500, () => conn.opts!.onState("connecting", "Reconnecting…"));
+    expect(r.failure).toEqual({ code: "connection_interrupted", message: "The connection was interrupted during the sample (Reconnecting…)" });
+  });
+
+  it("only the peer leaving \"connected\", seen at the next sample (no event, no report)", async () => {
+    const r = await freezeAt(4500, () => { pc.connectionState = "disconnected"; });
+    expect(r.failure).toEqual({ code: "connection_interrupted", message: "The connection was interrupted during the sample (peer disconnected)" });
+  });
+
+  it("a freeze with the connection still up: the average would pass, the slowest interval does not", async () => {
+    const r = await freezeAt(4500, () => pc.freeze());
+    expect(r.failure).toBeNull();
+    expect(r.metrics.fps).toBeGreaterThanOrEqual(PASS_CRITERIA.minFps); // 13.5: the old rule passed this
+    expect(r.metrics.minIntervalFps).toBe(0);
+    expect(r.verdict).toBe("FAIL: the video stalled: 0.0 fps in its slowest interval (need at least 5 in every interval)");
+  });
+
+  it("a stall in the last second", async () => {
+    const r = await freezeAt(9000, () => pc.freeze());
+    expect(r.metrics.fps).toBeGreaterThan(PASS_CRITERIA.minFps);
+    expect(r.status).toBe("fail");
+    expect(r.verdict).toMatch(/^FAIL: the video stalled: 0\.0 fps/);
+  });
+});
+
 describe("credentials never reach the report", () => {
   it("redacts the fal token from a socket error the browser echoes", async () => {
     const p = start();
@@ -325,19 +375,21 @@ describe("measuring", () => {
   });
   it("computes rates and loss over the window from cumulative counters", () => {
     const m = summarize([S(0, { framesDecoded: 100, presentedFrames: 90, packetsLost: 10, packetsReceived: 1000, rttMs: 40, jitterMs: 5 }), S(5000, { framesDecoded: 175, presentedFrames: 140, packetsLost: 15, packetsReceived: 1495, rttMs: 60, jitterMs: 15, frameWidth: 640, frameHeight: 360 })]);
-    expect(m).toMatchObject({ fps: 15, displayedFps: 10, packetLossPct: 1, rttMs: { avg: 50, max: 60 }, jitterMs: { avg: 10, max: 15 }, sampleMs: 5000, resolution: { width: 640, height: 360 } });
+    expect(m).toMatchObject({ fps: 15, minIntervalFps: 15, displayedFps: 10, packetLossPct: 1, rttMs: { avg: 50, max: 60 }, jitterMs: { avg: 10, max: 15 }, sampleMs: 5000, resolution: { width: 640, height: 360 } });
   });
 });
 
 describe("the PASS rule", () => {
-  const ok = { ...emptyMetrics(), timeToFirstFrameMs: 15_000, fps: 10, sampleMs: 9_000 };
+  const ok = { ...emptyMetrics(), timeToFirstFrameMs: 15_000, fps: 10, minIntervalFps: 5, sampleMs: 9_500 };
   it("passes exactly at each limit", () => { expect(evaluate({ failure: null, metrics: ok }).pass).toBe(true); });
   it.each([
     [{ timeToFirstFrameMs: 15_001 }, "FAIL: first frame took 15.0 s (limit 15.0 s)"],
     [{ fps: 9.9 }, "FAIL: 9.9 fps over the sample (need at least 10)"],
-    [{ sampleMs: 8_999 }, "FAIL: video was only sampled for 9.0 s (need 9.0 s)"],
-    [{ timeToFirstFrameMs: null }, "FAIL: no transformed video frame arrived"],
+    [{ sampleMs: 9_499 }, "FAIL: video was only sampled for 9.5 s (need 10.0 s)"],
+    [{ minIntervalFps: 4.9 }, "FAIL: the video stalled: 4.9 fps in its slowest interval (need at least 5 in every interval)"],
+    [{ timeToFirstFrameMs: null }, "FAIL: no video frame arrived"],
     [{ fps: null }, "FAIL: no frame rate could be measured"],
+    [{ minIntervalFps: null }, "FAIL: no frame rate could be measured"],
   ])("fails %o", (change, verdict) => {
     expect(evaluate({ failure: null, metrics: { ...ok, ...change } })).toEqual({ pass: false, verdict });
   });
@@ -345,6 +397,6 @@ describe("the PASS rule", () => {
     expect(evaluate({ failure: { code: "model_error", message: "bad prompt" }, metrics: { ...ok, fps: 30 } })).toEqual({ pass: false, verdict: "FAIL: model_error: bad prompt" });
   });
   it("is the documented rule", () => {
-    expect(PASS_CRITERIA).toEqual({ firstFrameMaxMs: 15_000, minFps: 10, sampleMs: 10_000, minSampleCoverage: 0.9 });
+    expect(PASS_CRITERIA).toEqual({ firstFrameMaxMs: 15_000, minFps: 10, minIntervalFps: 5, sampleMs: 10_000 });
   });
 });

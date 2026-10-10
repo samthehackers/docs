@@ -54,15 +54,15 @@ export async function POST(req: NextRequest) {
     headers: { "content-type": "application/json", "x-fal-target-url": TOKEN_URL, ...(ua ? { "user-agent": ua } : {}) },
     body: JSON.stringify({ allowed_apps: [ok.app], token_expiration: ok.seconds }),
   });
-  let upstream: Response;
+  let upstream: Response, text: string;
   try {
     upstream = await inner.POST(clean);
+    text = await upstream.text(); // inside the try: a body that breaks off is the same failure as no answer
   } catch {
     console.error("[fal-proxy] the token request to fal failed"); // no error text: it could carry request details
     return deny(502, "The token service could not be reached");
   }
   // Our own response: fal's status and body, none of its headers (no cookies on our domain), never cached.
-  const text = await upstream.text();
   const key = process.env.FAL_KEY ?? "";
   if (key && text.includes(key)) {
     console.error("[fal-proxy] fal's response contained the API key; withheld");

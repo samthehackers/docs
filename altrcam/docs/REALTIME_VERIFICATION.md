@@ -20,8 +20,11 @@ Studio's own connection code (`connectLucy`) unchanged:
 3. Runs `connectLucy`: token through `/api/fal/proxy`, SDP offer, answer, ICE. Every milestone is recorded with a
    timestamp, including the **type (or keys) of every message fal sends**, never their values. That list is the first
    real evidence of fal's message names: compare it with `Incoming` in `lib/fal/signaling.ts`.
-4. Waits for the first transformed frame on the output `<video>` (`requestVideoFrameCallback`), up to 55 s.
-5. Samples `getStats()` every second for 10 s: decoded frames, resolution, round-trip time, jitter, packet loss.
+4. Waits for the first frame on the output `<video>` (`requestVideoFrameCallback`), up to 55 s. The check cannot tell a
+   transformed frame from any other frame, so look at the right-hand video yourself.
+5. Samples `getStats()` every second for 10 s: decoded frames, resolution, round-trip time, jitter, packet loss. The
+   connection must stay up the whole time: a peer that drops, or connectLucy reporting "Reconnecting…", fails the check at
+   once (connectLucy itself would only give up 15 s later, after the window).
 6. Closes everything (connection, camera tracks, remote tracks) and ends the diagnostics session, then shows the
    verdict, a table of numbers and steps, and **Copy as JSON**.
 
@@ -34,10 +37,11 @@ Defined once in `lib/diagnostics/criteria.ts` (`PASS_CRITERIA`), applied by the 
 
 | Criterion | Rule |
 |---|---|
-| No failure | no failure code from the connection (token, socket, answer, ICE, model error) or the check itself |
-| Time to first frame (TTFF) | at most **15 s**, measured from the start of the connection (just before the token request) to the first transformed frame presented in the output `<video>` |
+| No failure or interruption | no failure code from the connection (token, socket, answer, ICE, model error) or the check itself, and no interruption during the sample window: no "Reconnecting…" from connectLucy and the peer `connected` at every sample (`connection_interrupted` otherwise) |
+| Time to first frame (TTFF) | at most **15 s**, measured from the start of the connection (just before the token request) to the first frame presented in the output `<video>` |
 | Frame rate | at least **10 fps**, the average decoded frame rate (`framesDecoded` from `getStats()`) over the sample window |
-| Sample window | **10 s** of sampling after the first frame, and at least 90% of it completed (a connection that drops after 3 s fails) |
+| No stall | at least **5 fps** in **every** interval between two consecutive samples (about 1 s each), including the last, so a freeze anywhere in the window fails even if the average is still above 10 |
+| Sample window | **10 s** of sampling after the first frame, run to the end (within half a stats interval). A window cut short only happens with a failure or interruption, which already fails |
 
 RTT, jitter, packet loss, resolution and the displayed frame rate are reported but are not part of PASS. A check that
 passes says the connection works from that browser and network; it says nothing about restrictive networks (no TURN
@@ -101,7 +105,8 @@ The report's `failure.code` is the connection's own (`lib/fal/signaling.ts` `Fai
 | `session_refused`, `session_unreachable` | the diagnostics session was refused (not an admin: 403; signed out: 401) or the server could not be reached |
 | `token_refused`, `token_unreachable` | `/api/fal/proxy` refused the token request (status in the report) or fal's token endpoint could not be reached |
 | `socket_error`, `model_error`, `bad_answer`, `answer_timeout`, `ice_failed`, `connection_lost` | see the symptom table in `GO_LIVE.md` section 7 |
-| `no_first_frame` | no transformed frame within 55 s; the message says whether the WebRTC connection itself was established |
+| `connection_interrupted` | the peer left `connected`, or connectLucy reported "Reconnecting…", during the sample window |
+| `no_first_frame` | no video frame within 55 s; the message says whether the WebRTC connection itself was established |
 | `aborted`, `camera_error`, `diagnostics_error` | the check was stopped, the browser could not draw/capture the canvas, or the check itself failed |
 
 For an `answer_timeout`, read `serverMessages` and `steps` in the JSON first: they show whether fal sent anything at all and
@@ -115,12 +120,18 @@ get no row and so no token); the proxy checks the session's owner, so no one els
 `max_seconds = 0`, so whatever meters it (an end, a heartbeat, the stale sweep, the admin's next Studio start) debits
 nothing; it is labelled (`settings.diagnostics`, end reason `diagnostics`), rate-limited, at most one is open per admin,
 the admin's own Studio session is left alone, and every start and result is written to the audit log. Its end route only
-closes the caller's own diagnostics rows, so it cannot close a normal Studio session unbilled.
+closes the caller's own diagnostics rows, so it cannot close a normal Studio session unbilled. A diagnostics row is
+identified by `max_seconds = 0` **and** the settings flag, not the flag alone (the Studio's start route stores the caller's
+settings as sent, and plan session limits are at least 10 s, so no Studio row has `max_seconds = 0`). A result is recorded
+only by the request that closes the row: a later end with a result gets 409, so there is one audit record per check.
 
 Known edges: a diagnostics row never heartbeats, so the stale sweep may close it (as `stale`, still unbilled) while a long
 check is running. That does not stop the connection, whose token is already minted, but a token request made after that
 (the fal client opening a second socket) would be refused. The same applies if the proxy later refuses sessions that were
-never marked live after 30 s.
+never marked live after 30 s. If the sweep closed the row first, the page's own end gets 409 and the result is not in the
+audit log (it is still in the page's JSON). The Studio's start route still accepts a `diagnostics` key in its settings;
+stripping it there belongs to the stream that owns that route (this one was asked not to change it), and is harmless now
+that the flag alone no longer identifies a diagnostics row.
 
 ## What is tested without fal
 

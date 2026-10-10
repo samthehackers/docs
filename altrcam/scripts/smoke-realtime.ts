@@ -26,7 +26,7 @@
  */
 import { readFileSync } from "node:fs";
 import { chromium, type Browser, type BrowserContext, type Page } from "@playwright/test";
-import { evaluate, FIRST_FRAME_WAIT_MS, PASS_CRITERIA, redact, type DiagnosticsReport } from "../lib/diagnostics/criteria";
+import { DIAG_DOM, evaluate, FIRST_FRAME_WAIT_MS, PASS_CRITERIA, redact, type DiagnosticsReport } from "../lib/diagnostics/criteria";
 
 const PAGE_PATH = "/admin/diagnostics";
 const DEFAULT_TIMEOUT_MS = 120_000;
@@ -161,13 +161,13 @@ async function run(smoke: Smoke): Promise<DiagnosticsReport | null> {
       const text = (await page.locator("body").innerText().catch(() => "")).slice(0, 200);
       throw new SmokeError(`${PAGE_PATH} answered HTTP ${res?.status() ?? "?"}${text ? `: ${text}` : ""}`);
     }
-    const button = page.getByTestId("diagnostics-run");
+    const button = page.getByTestId(DIAG_DOM.run);
     try { await button.waitFor({ state: "visible", timeout: Math.min(30_000, timeoutMs) }); } catch { throw new SmokeError(`${PAGE_PATH} loaded but has no "Run check" button (is this deployment older than the diagnostics page?)`); }
     await button.click();
 
-    const done = page.locator('[data-testid="diagnostics-result"][data-status="pass"], [data-testid="diagnostics-result"][data-status="fail"]');
+    const done = page.locator(`[data-testid="${DIAG_DOM.result}"][data-status="pass"], [data-testid="${DIAG_DOM.result}"][data-status="fail"]`);
     try { await done.waitFor({ state: "attached", timeout: timeoutMs }); } catch { throw new SmokeError(`Timed out after ${timeoutMs} ms waiting for the check to finish`); }
-    const text = await page.getByTestId("diagnostics-json").textContent();
+    const text = await page.getByTestId(DIAG_DOM.json).textContent();
     try { return JSON.parse(text ?? "") as DiagnosticsReport; } catch { throw new SmokeError("The page's report is not valid JSON"); }
   } finally {
     await browser.close().catch(() => {});

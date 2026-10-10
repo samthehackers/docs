@@ -16,7 +16,8 @@ describe("docs/REALTIME_VERIFICATION.md", () => {
     expect(doc).toContain(`at most **${PASS_CRITERIA.firstFrameMaxMs / 1000} s**`);
     expect(doc).toContain(`at least **${PASS_CRITERIA.minFps} fps**`);
     expect(doc).toContain(`**${PASS_CRITERIA.sampleMs / 1000} s** of sampling`);
-    expect(doc).toContain(`at least ${PASS_CRITERIA.minSampleCoverage * 100}% of it`);
+    expect(doc).toContain(`at least **${PASS_CRITERIA.minIntervalFps} fps** in **every** interval`);
+    expect(doc).toContain("connection_interrupted");
     expect(doc).toContain(`up to ${FIRST_FRAME_WAIT_MS / 1000} s`);
   });
 

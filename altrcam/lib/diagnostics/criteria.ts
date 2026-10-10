@@ -6,14 +6,20 @@
  * Documented in docs/REALTIME_VERIFICATION.md. Change the numbers there too.
  */
 export const PASS_CRITERIA = {
-  /** The first transformed frame must be on screen within this long of starting the connection (token request included). */
+  /**
+   * The first frame from the service must be on screen within this long of starting the connection (token request
+   * included). The check cannot tell a transformed frame from an echoed one: look at the video.
+   */
   firstFrameMaxMs: 15_000,
-  /** Average decoded frame rate of the transformed video over the sample window (getStats `framesDecoded`). */
+  /** Average decoded frame rate of the received video over the sample window (getStats `framesDecoded`). */
   minFps: 10,
-  /** How long stats are sampled after the first frame. */
+  /**
+   * Floor for EVERY interval between two consecutive stats samples (about 1 s each), so the video must keep moving for
+   * the whole window: a freeze or a stall at the end fails even when the average still looks fine.
+   */
+  minIntervalFps: 5,
+  /** How long stats are sampled after the first frame. The window must run to the end (within half a stats interval). */
   sampleMs: 10_000,
-  /** The sample only counts if it covered at least this share of `sampleMs` (a connection that dies after 3 s fails). */
-  minSampleCoverage: 0.9,
 } as const;
 
 /**
@@ -21,6 +27,12 @@ export const PASS_CRITERIA = {
  * then ICE 30 s after the answer) so their more specific failure codes are reported first.
  */
 export const FIRST_FRAME_WAIT_MS = 55_000;
+/**
+ * The page's contract with scripts/smoke-realtime.ts: test ids on the panel (components/admin/diagnostics-panel.tsx). The
+ * result element carries data-status "running" | "pass" | "fail"; "pass"/"fail" means the JSON element holds the final report.
+ */
+export const DIAG_DOM = { run: "diagnostics-run", stop: "diagnostics-stop", result: "diagnostics-result", json: "diagnostics-json", copy: "diagnostics-copy" } as const;
+
 /** getStats() is read this often during the sample window. */
 export const STATS_INTERVAL_MS = 1_000;
 
@@ -51,11 +63,13 @@ export interface StatSample {
 }
 
 export interface DiagMetrics {
-  /** From the start of the connection (just before the token request) to the first transformed frame presented. */
+  /** The lowest decoded frame rate of any interval between two consecutive samples. */
+  minIntervalFps: number | null;
+  /** From the start of the connection (just before the token request) to the first received frame presented. */
   timeToFirstFrameMs: number | null;
   firstFrameSource: "requestVideoFrameCallback" | "loadeddata" | null;
   resolution: { width: number; height: number } | null;
-  /** Decoded frames per second over the sample window, from getStats framesDecoded. This is the PASS number. */
+  /** Decoded frames per second over the sample window, from getStats framesDecoded. PASS needs this and minIntervalFps. */
   fps: number | null;
   /** Frames presented to the <video> per second over the window (requestVideoFrameCallback). Informational. */
   displayedFps: number | null;
@@ -105,7 +119,7 @@ export interface DiagnosticsReport {
 }
 
 export function emptyMetrics(): DiagMetrics {
-  return { timeToFirstFrameMs: null, firstFrameSource: null, resolution: null, fps: null, displayedFps: null, rttMs: null, jitterMs: null, packetLossPct: null, sampleMs: 0 };
+  return { minIntervalFps: null, timeToFirstFrameMs: null, firstFrameSource: null, resolution: null, fps: null, displayedFps: null, rttMs: null, jitterMs: null, packetLossPct: null, sampleMs: 0 };
 }
 
 const secs = (ms: number) => `${(ms / 1000).toFixed(1)} s`;
@@ -114,11 +128,12 @@ const secs = (ms: number) => `${(ms / 1000).toFixed(1)} s`;
 export function evaluate(r: { failure: DiagFailure | null; metrics: DiagMetrics }, c = PASS_CRITERIA): { pass: boolean; verdict: string } {
   const m = r.metrics;
   if (r.failure) return { pass: false, verdict: `FAIL: ${r.failure.code}: ${r.failure.message}` };
-  if (m.timeToFirstFrameMs === null) return { pass: false, verdict: "FAIL: no transformed video frame arrived" };
+  if (m.timeToFirstFrameMs === null) return { pass: false, verdict: "FAIL: no video frame arrived" };
   if (m.timeToFirstFrameMs > c.firstFrameMaxMs) return { pass: false, verdict: `FAIL: first frame took ${secs(m.timeToFirstFrameMs)} (limit ${secs(c.firstFrameMaxMs)})` };
-  if (m.sampleMs < c.sampleMs * c.minSampleCoverage) return { pass: false, verdict: `FAIL: video was only sampled for ${secs(m.sampleMs)} (need ${secs(c.sampleMs * c.minSampleCoverage)})` };
-  if (m.fps === null) return { pass: false, verdict: "FAIL: no frame rate could be measured" };
+  if (m.sampleMs < c.sampleMs - STATS_INTERVAL_MS / 2) return { pass: false, verdict: `FAIL: video was only sampled for ${secs(m.sampleMs)} (need ${secs(c.sampleMs)})` };
+  if (m.fps === null || m.minIntervalFps === null) return { pass: false, verdict: "FAIL: no frame rate could be measured" };
   if (m.fps < c.minFps) return { pass: false, verdict: `FAIL: ${m.fps.toFixed(1)} fps over the sample (need at least ${c.minFps})` };
+  if (m.minIntervalFps < c.minIntervalFps) return { pass: false, verdict: `FAIL: the video stalled: ${m.minIntervalFps.toFixed(1)} fps in its slowest interval (need at least ${c.minIntervalFps} in every interval)` };
   return { pass: true, verdict: `PASS: first frame in ${secs(m.timeToFirstFrameMs)}, ${m.fps.toFixed(1)} fps over ${secs(m.sampleMs)}` };
 }
 

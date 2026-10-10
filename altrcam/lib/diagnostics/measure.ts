@@ -64,6 +64,19 @@ function rate(samples: StatSample[], pick: (s: StatSample) => number | null): nu
   return round(((pick(b) as number) - (pick(a) as number)) / dt, 1);
 }
 
+/** The lowest per-second rate between consecutive samples that both have the counter (null: fewer than two). */
+function minIntervalRate(samples: StatSample[], pick: (s: StatSample) => number | null): number | null {
+  const have = samples.filter((s) => pick(s) !== null);
+  let min: number | null = null;
+  for (let i = 1; i < have.length; i++) {
+    const dt = (have[i].atMs - have[i - 1].atMs) / 1000;
+    if (dt <= 0) continue;
+    const r = ((pick(have[i]) as number) - (pick(have[i - 1]) as number)) / dt;
+    if (min === null || r < min) min = r;
+  }
+  return min === null ? null : round(min, 1);
+}
+
 /**
  * Metrics over the sample window. `timeToFirstFrameMs` and `resolution` come from the caller (the <video> element knows
  * them best); everything else from the samples.
@@ -73,6 +86,7 @@ export function summarize(samples: StatSample[], extra: Partial<Pick<DiagMetrics
   Object.assign(m, extra);
   if (samples.length) m.sampleMs = samples[samples.length - 1].atMs - samples[0].atMs;
   m.fps = rate(samples, (s) => s.framesDecoded);
+  m.minIntervalFps = minIntervalRate(samples, (s) => s.framesDecoded);
   m.displayedFps = rate(samples, (s) => s.presentedFrames);
   m.rttMs = spread(samples.map((s) => s.rttMs));
   m.jitterMs = spread(samples.map((s) => s.jitterMs));

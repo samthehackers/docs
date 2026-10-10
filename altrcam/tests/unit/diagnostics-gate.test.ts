@@ -191,12 +191,17 @@ describe("billing: a diagnostics session never costs credits", () => {
     expect(ends.map((a) => [a.actorId, a.target, a.meta])).toEqual([["boss", id, { pass: false, failureCode: "answer_timeout", timeToFirstFrameMs: null, fps: null, rttMs: null }]]);
     expect(await balance("boss")).toBe(1000);
   });
-  it("is idempotent: a second end (the pagehide beacon) is fine and adds no second record without a result", async () => {
+  it("records one result per check: a second end is fine without a result and refused (409) with one", async () => {
     const id = await newDiag();
-    expect((await end("boss", { sessionId: id })).status).toBe(200);
-    const again = await end("boss", { sessionId: id });
-    expect(await again.json()).toEqual({ ended: true, alreadyEnded: true });
-    expect(await d.select().from(auditLog).where(and(eq(auditLog.action, "diagnostics.end"), eq(auditLog.target, id)))).toHaveLength(1);
+    const result = { pass: true, failureCode: null, timeToFirstFrameMs: 2000, fps: 24, rttMs: 40 };
+    expect((await end("boss", { sessionId: id, result })).status).toBe(200);
+    const beacon = await end("boss", { sessionId: id });
+    expect(await beacon.json()).toEqual({ ended: true, alreadyEnded: true });
+    const forged = await end("boss", { sessionId: id, result: { ...result, fps: 60 } });
+    expect(forged.status).toBe(409);
+    expect(await forged.json()).toMatchObject({ code: "already_ended" });
+    const ends = await d.select().from(auditLog).where(and(eq(auditLog.action, "diagnostics.end"), eq(auditLog.target, id)));
+    expect(ends.map((a) => a.meta)).toEqual([result]);
   });
 });
 
@@ -211,6 +216,13 @@ describe("ending: only the admin's own diagnostics row", () => {
     await d.insert(studioSessions).values({ id: NORMAL, userId: "boss", maxSeconds: 1800 });
     expect((await end("boss", { sessionId: NORMAL })).status).toBe(404);
     expect((await row(NORMAL)).endedAt).toBeNull();
+  });
+  it("a billed Studio row whose (caller-supplied) settings say diagnostics is still not a diagnostics row", async () => {
+    // /api/studio/session/start stores the caller's settings as sent, so the flag alone proves nothing.
+    await d.insert(studioSessions).values({ id: NORMAL, userId: "boss", maxSeconds: 1800, settings: { diagnostics: true, prompt: "x" } });
+    expect((await end("boss", { sessionId: NORMAL })).status).toBe(404);
+    await newDiag(); // "at most one open diagnostics row" must not close it either
+    expect(await row(NORMAL)).toMatchObject({ endedAt: null, endReason: null });
   });
   it("cannot close another admin's diagnostics row", async () => {
     const id = await newDiag("boss2");

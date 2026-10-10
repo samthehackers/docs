@@ -205,6 +205,7 @@ describe("FAL_KEY is never returned or logged", () => {
     ["fal failing", () => new Response("upstream exploded", { status: 502, headers: { "content-type": "text/plain" } })],
     ["fal echoing our request back (worst case)", () => new Response(JSON.stringify({ youSent: `Key ${FAKE_KEY}` }), { status: 200, headers: { "content-type": "application/json", "x-echo-authorization": `Key ${FAKE_KEY}` } })],
     ["fal unreachable", () => { throw new TypeError(`fetch failed (Authorization: Key ${FAKE_KEY})`); }],
+    ["a body that breaks off", () => new Response(new ReadableStream({ start(c) { c.error(new Error(`socket hang up, Key ${FAKE_KEY}`)); } }), { status: 200, headers: { "content-type": "application/json" } })],
   ];
   it.each(scenarios)("when the upstream answer is %s", async (_n, upstream) => {
     reply = upstream;
@@ -213,6 +214,16 @@ describe("FAL_KEY is never returned or logged", () => {
     expect(body).not.toContain(FAKE_KEY);
     expect(allHeaders(r)).not.toContain(FAKE_KEY);
     expect(logs.join("\n")).not.toContain(FAKE_KEY);
+  });
+  it.each([
+    ["unreachable", () => { throw new TypeError("fetch failed"); }],
+    ["its body breaks off", () => new Response(new ReadableStream({ start(c) { c.error(new Error("socket hang up")); } }), { status: 200 })],
+  ])("fal %s: the fixed 502", async (_n, upstream) => {
+    reply = upstream as () => Response;
+    const r = await call();
+    expect(r.status).toBe(502);
+    expect(await r.json()).toEqual({ error: "The token service could not be reached" });
+    expect(logs).toEqual(["[fal-proxy] the token request to fal failed"]);
   });
   it("in any refusal either", async () => {
     for (const p of [call({ target: "http://rest.fal.ai/tokens/" }), call({ session: THEIRS }), call({ method: "GET" }), call({ body: { allowed_apps: ["x"], token_expiration: 1 } })]) {

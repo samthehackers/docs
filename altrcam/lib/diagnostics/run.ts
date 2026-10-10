@@ -2,7 +2,11 @@
  * Browser-only. One realtime check, as run by /admin/diagnostics and driven headless by scripts/smoke-realtime.ts.
  *
  *   synthetic camera → admin diagnostics session (bills nothing) → connectLucy (token through /api/fal/proxy, offer,
- *   answer, ICE) → first transformed frame → getStats() sampled for PASS_CRITERIA.sampleMs → close everything.
+ *   answer, ICE) → first frame received → getStats() sampled for PASS_CRITERIA.sampleMs → close everything.
+ *
+ * During the sample window the connection must stay up the whole time: connectLucy reports a dropped peer as
+ * "connecting"/"Reconnecting…" and only fails it 15 s later (DISCONNECT_GRACE_MS), after the window, so the check fails
+ * on the first sign of an interruption itself (that report, a peer state other than "connected", or at any sample).
  *
  * It uses the Studio's own connection code (connectLucy) unchanged, observed through its optional `onTrace` hook, so a
  * pass here means the same code path can work for users. It never retries. Everything it touches is released on every
@@ -78,6 +82,7 @@ export async function runDiagnostics(o: RunOptions, signal?: AbortSignal): Promi
   let presented = 0;
   let counting = false; // requestVideoFrameCallback is available and counting presented frames
   let finished = false;
+  let sampling = false; // inside the sample window, where any interruption fails the check
   const observers = new AbortController();
   const onAbort = () => fail({ code: "aborted", message: "The check was stopped before it finished" });
   signal?.addEventListener("abort", onAbort, { once: true });
@@ -112,7 +117,7 @@ export async function runDiagnostics(o: RunOptions, signal?: AbortSignal): Promi
 
   const onState = (s: ConnState, detail?: string, f?: LucyFailure) => {
     if (s === "live") step("connected");
-    else if (s === "connecting" && detail) step("reconnecting", detail);
+    else if (s === "connecting" && detail) { step("reconnecting", detail); if (sampling) interrupted(detail); }
     else if (s === "failed") fail(f ?? { code: "unknown", message: detail ?? "The connection failed" });
   };
 
@@ -128,12 +133,17 @@ export async function runDiagnostics(o: RunOptions, signal?: AbortSignal): Promi
     step(e, detail);
   };
 
+  const interrupted = (why: string) => fail({ code: "connection_interrupted", message: `The connection was interrupted during the sample (${why})` });
+
   const observe = (p: RTCPeerConnection) => {
     if (typeof p.addEventListener !== "function") return;
     const opts = { signal: observers.signal };
     p.addEventListener("icegatheringstatechange", () => step("ice_gathering_state", p.iceGatheringState), opts);
     p.addEventListener("iceconnectionstatechange", () => step("ice_connection_state", p.iceConnectionState), opts);
-    p.addEventListener("connectionstatechange", () => step("peer_connection_state", p.connectionState), opts);
+    p.addEventListener("connectionstatechange", () => {
+      step("peer_connection_state", p.connectionState);
+      if (sampling && p.connectionState !== "connected") interrupted(`peer ${p.connectionState}`);
+    }, opts);
   };
 
   async function createSession() {
@@ -156,15 +166,18 @@ export async function runDiagnostics(o: RunOptions, signal?: AbortSignal): Promi
 
   async function sampleWindow() {
     step("sampling_started");
+    sampling = true;
     const start = now();
     for (;;) {
       if (!pc) break;
+      if (pc.connectionState !== "connected") { interrupted(`peer ${pc.connectionState}`); break; }
       try { r.samples.push(readSample(await pc.getStats(), since(), counting ? presented : null)); } catch (e) { step("stats_error", errorText(e)); }
       emit();
       if (r.failure || now() - start >= PASS_CRITERIA.sampleMs) break;
       await sleep(STATS_INTERVAL_MS);
       if (r.failure) break;
     }
+    sampling = false;
     step("sampling_finished", `${r.samples.length} samples`);
   }
 
@@ -190,6 +203,7 @@ export async function runDiagnostics(o: RunOptions, signal?: AbortSignal): Promi
     const verdict = evaluate(r);
     if (r.sessionId) {
       const m = r.metrics;
+      step("ending_session"); // from here the page's pagehide beacon is not needed: this keepalive request outlives the page
       try {
         const res = await o.fetch(DIAG_END_URL, {
           method: "POST", headers: JSON_HEADERS, keepalive: true,
@@ -227,7 +241,7 @@ export async function runDiagnostics(o: RunOptions, signal?: AbortSignal): Promi
       while (!r.failure && firstFrameAt === null && now() < deadline) await sleep(POLL_MS);
       if (!r.failure && firstFrameAt === null) {
         const connected = pc?.connectionState === "connected";
-        fail({ code: "no_first_frame", message: `No transformed video frame within ${FIRST_FRAME_WAIT_MS / 1000} s${connected ? ", although the connection was established" : ""}` });
+        fail({ code: "no_first_frame", message: `No video frame within ${FIRST_FRAME_WAIT_MS / 1000} s${connected ? ", although the connection was established" : ""}` });
       }
       if (!r.failure) await sampleWindow();
     }

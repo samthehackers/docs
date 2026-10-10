@@ -26,8 +26,9 @@ export default async function Diagnostics() {
           {PASS_CRITERIA.sampleMs / 1000} s and closes everything. No user credits are used; fal bills its own usage for the seconds the check runs.
         </p>
         <p className="text-sm text-muted-foreground">
-          <b>PASS</b> = no failure, the first transformed frame within {PASS_CRITERIA.firstFrameMaxMs / 1000} s of starting the connection, and at least{" "}
-          {PASS_CRITERIA.minFps} decoded fps over a {PASS_CRITERIA.sampleMs / 1000} s sample. The check gives up after {FIRST_FRAME_WAIT_MS / 1000} s without a frame.
+          <b>PASS</b> = no failure or interruption, the first frame within {PASS_CRITERIA.firstFrameMaxMs / 1000} s of starting the connection, at least{" "}
+          {PASS_CRITERIA.minFps} decoded fps on average over a {PASS_CRITERIA.sampleMs / 1000} s sample and at least {PASS_CRITERIA.minIntervalFps} fps in every second of it.
+          The check cannot tell a transformed frame from any other: look at the received video. The check gives up after {FIRST_FRAME_WAIT_MS / 1000} s without a frame.
           Record results in <code>docs/REALTIME_VERIFICATION.md</code>.
         </p>
       </div>

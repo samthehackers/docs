@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { connectLucy } from "@/lib/fal/signaling";
-import { PASS_CRITERIA, type DiagnosticsReport } from "@/lib/diagnostics/criteria";
+import { DIAG_DOM, PASS_CRITERIA, type DiagnosticsReport } from "@/lib/diagnostics/criteria";
 import { DEFAULT_DIAG_PROMPT, DIAG_END_URL, runDiagnostics } from "@/lib/diagnostics/run";
 import { startSyntheticCamera, SYNTHETIC_CAMERA } from "@/lib/diagnostics/synthetic-camera";
 
@@ -42,7 +42,8 @@ export function DiagnosticsPanel({ app, configured }: { app: string; configured:
       const final = await runDiagnostics({
         fetch: (u, i) => fetch(u, i), connect: connectLucy, camera: () => startSyntheticCamera(canvas), output,
         endpoint: window.location.origin, app, prompt: prompt.trim() || DEFAULT_DIAG_PROMPT,
-        onProgress: (r) => { sessionRef.current = r.cleanup.sessionEnded ? null : r.sessionId; setReport({ ...r, steps: [...r.steps] }); },
+        // Once the runner is ending the session itself (a keepalive request), the pagehide beacon would only duplicate it.
+        onProgress: (r) => { sessionRef.current = r.steps.some((s) => s.name === "ending_session") ? null : r.sessionId; setReport({ ...r, steps: [...r.steps] }); },
       }, ac.signal);
       sessionRef.current = null;
       setReport({ ...final });
@@ -67,8 +68,8 @@ export function DiagnosticsPanel({ app, configured }: { app: string; configured:
           <Input value={prompt} onChange={(e) => setPrompt(e.target.value)} disabled={running} maxLength={500} className="mt-1" />
         </label>
         {running
-          ? <Button variant="outline" onClick={() => abortRef.current?.abort()} data-testid="diagnostics-stop">Stop</Button>
-          : <Button onClick={run} data-testid="diagnostics-run">{report ? "Run again" : "Run check"}</Button>}
+          ? <Button variant="outline" onClick={() => abortRef.current?.abort()} data-testid={DIAG_DOM.stop}>Stop</Button>
+          : <Button onClick={run} data-testid={DIAG_DOM.run}>{report ? "Run again" : "Run check"}</Button>}
       </div>
       {!configured && <p role="alert" className="rounded-md border border-destructive/50 p-3 text-sm">The fal API key is not set on this deployment, so the server will refuse the check (it will report <code>not_configured</code>).</p>}
 
@@ -78,13 +79,13 @@ export function DiagnosticsPanel({ app, configured }: { app: string; configured:
           <figcaption className="text-xs text-muted-foreground">Sent: synthetic camera ({SYNTHETIC_CAMERA.width}×{SYNTHETIC_CAMERA.height}, {SYNTHETIC_CAMERA.fps} fps canvas)</figcaption>
         </figure>
         <figure className="space-y-1">
-          <video ref={outRef} autoPlay muted playsInline className="aspect-video w-full rounded-md border bg-black" aria-label="Transformed video received from the model" />
-          <figcaption className="text-xs text-muted-foreground">Received: transformed video</figcaption>
+          <video ref={outRef} autoPlay muted playsInline className="aspect-video w-full rounded-md border bg-black" aria-label="Video received from the model" />
+          <figcaption className="text-xs text-muted-foreground">Received: video from the model</figcaption>
         </figure>
       </div>
 
       {report && (
-        <section data-testid="diagnostics-result" data-status={report.status} aria-live="polite" className="space-y-4">
+        <section data-testid={DIAG_DOM.result} data-status={report.status} aria-live="polite" className="space-y-4">
           <p className={`rounded-md border p-3 font-semibold ${report.status === "pass" ? "border-green-600 text-green-600" : report.status === "fail" ? "border-destructive text-destructive" : ""}`}>
             {report.status === "running" ? "Running…" : report.verdict}
           </p>
@@ -95,7 +96,8 @@ export function DiagnosticsPanel({ app, configured }: { app: string; configured:
                 ["App", report.app],
                 ["Time to first frame", `${fmtMs(m?.timeToFirstFrameMs)} (limit ${fmtMs(PASS_CRITERIA.firstFrameMaxMs)})`],
                 ["Resolution", m?.resolution ? `${m.resolution.width}×${m.resolution.height}` : "—"],
-                ["FPS (decoded, PASS number)", `${fmtNum(m?.fps)} (need ≥ ${PASS_CRITERIA.minFps})`],
+                ["FPS (decoded, average)", `${fmtNum(m?.fps)} (need ≥ ${PASS_CRITERIA.minFps})`],
+                ["FPS (slowest interval)", `${fmtNum(m?.minIntervalFps)} (need ≥ ${PASS_CRITERIA.minIntervalFps})`],
                 ["FPS (displayed)", fmtNum(m?.displayedFps)],
                 ["RTT avg / max", m?.rttMs ? `${m.rttMs.avg} / ${m.rttMs.max} ms` : "—"],
                 ["Jitter avg / max", m?.jitterMs ? `${m.jitterMs.avg} / ${m.jitterMs.max} ms` : "—"],
@@ -119,12 +121,12 @@ export function DiagnosticsPanel({ app, configured }: { app: string; configured:
           </div>
 
           <div className="flex items-center gap-3">
-            <Button variant="outline" onClick={copy} disabled={!done} data-testid="diagnostics-copy">Copy as JSON</Button>
+            <Button variant="outline" onClick={copy} disabled={!done} data-testid={DIAG_DOM.copy}>Copy as JSON</Button>
             {copied && <span role="status" className="text-xs">{copied}</span>}
           </div>
           <details open={!!done}>
             <summary className="cursor-pointer text-sm text-muted-foreground">Report JSON</summary>
-            <pre data-testid="diagnostics-json" className="mt-2 max-h-96 overflow-auto rounded-md border bg-muted/40 p-3 text-xs">{json}</pre>
+            <pre data-testid={DIAG_DOM.json} className="mt-2 max-h-96 overflow-auto rounded-md border bg-muted/40 p-3 text-xs">{json}</pre>
           </details>
         </section>
       )}

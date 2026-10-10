@@ -33,7 +33,12 @@ export const DIAGNOSTICS_END_REASON = "diagnostics";
 /** Billable seconds of a diagnostics row: none. See the header comment. */
 export const DIAGNOSTICS_MAX_SECONDS = 0;
 
-const isDiagnosticsRow = sql`(${studioSessions.settings} ->> 'diagnostics') = 'true'`;
+/**
+ * A diagnostics row: max_seconds 0 AND the settings flag. The flag alone is not enough: /api/studio/session/start stores
+ * the caller's settings as sent, so a billed Studio row could carry it. max_seconds 0 cannot come from the Studio (plan
+ * session limits are validated to at least 10 s, lib/plan-config.ts), and a row with 0 bills nothing however it is closed.
+ */
+const isDiagnosticsRow = and(eq(studioSessions.maxSeconds, DIAGNOSTICS_MAX_SECONDS), sql`(${studioSessions.settings} ->> 'diagnostics') = 'true'`);
 
 /** For /admin/diagnostics: whether the service is configured, what the check connects to, and the last recorded runs. */
 export async function diagnosticsOverview() {
@@ -93,11 +98,10 @@ export async function endDiagnosticsSession(req: Request) {
   if (!closed.length) {
     const [row] = await d.select({ id: studioSessions.id }).from(studioSessions).where(mine);
     if (!row) throw new HttpError(404, "Diagnostics session not found");
+    // A result is only recorded by the request that closes the row: one record per check, none added to old rows later.
+    if (body.result) throw new HttpError(409, "This diagnostics session has already ended; its result was not recorded", { code: "already_ended" });
+    return { ended: true, alreadyEnded: true };
   }
-  // Record the result. The row may already be closed (by the page's pagehide beacon, which sends no result, or by the
-  // stale sweep, since a diagnostics row never heartbeats); the result is still worth keeping.
-  if (closed.length || body.result) {
-    await d.insert(auditLog).values({ actorId: adminId, action: "diagnostics.end", target: body.sessionId, meta: { ...(body.result ?? {}) } });
-  }
-  return { ended: true, alreadyEnded: !closed.length };
+  await d.insert(auditLog).values({ actorId: adminId, action: "diagnostics.end", target: body.sessionId, meta: { ...(body.result ?? {}) } });
+  return { ended: true, alreadyEnded: false };
 }

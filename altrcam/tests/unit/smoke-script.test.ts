@@ -31,7 +31,7 @@ function fixtureReport(over: Partial<DiagnosticsReport> = {}): DiagnosticsReport
     startedAt: "2026-10-10T10:00:00.000Z", finishedAt: "2026-10-10T10:00:13.000Z", durationMs: 13000,
     endpoint: "http://127.0.0.1", app: "decart/lucy-2-5/realtime", prompt: "p", criteria: PASS_CRITERIA, sessionId: "s",
     steps: [], serverMessages: [], counts: { localCandidates: 0, remoteCandidates: 0, serverMessages: 0 },
-    metrics: { ...emptyMetrics(), timeToFirstFrameMs: 2000, firstFrameSource: "requestVideoFrameCallback", fps: 24, sampleMs: 10000 },
+    metrics: { ...emptyMetrics(), timeToFirstFrameMs: 2000, firstFrameSource: "requestVideoFrameCallback", fps: 24, minIntervalFps: 22, sampleMs: 10000 },
     samples: [], failure: null,
     cleanup: { tracksStopped: true, peerClosed: true, connectionClosed: true, sessionEnded: true, sessionEndStatus: 200 },
     ...over,
@@ -40,7 +40,7 @@ function fixtureReport(over: Partial<DiagnosticsReport> = {}): DiagnosticsReport
 const REPORTS: Record<string, DiagnosticsReport> = {
   pass: fixtureReport(),
   fail: fixtureReport({ status: "fail", verdict: "FAIL: answer_timeout: Timed out waiting for the model to answer", failure: { code: "answer_timeout", message: "Timed out waiting for the model to answer" }, metrics: emptyMetrics() }),
-  liar: fixtureReport({ metrics: { ...emptyMetrics(), timeToFirstFrameMs: 2000, fps: 5, sampleMs: 10000 } }), // claims PASS at 5 fps
+  liar: fixtureReport({ metrics: { ...emptyMetrics(), timeToFirstFrameMs: 2000, fps: 5, minIntervalFps: 5, sampleMs: 10000 } }), // claims PASS at 5 fps
 };
 
 function page(mode: string) {

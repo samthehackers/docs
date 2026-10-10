@@ -9,7 +9,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { browserNetwork, createStudioSession, type SessionDeps, type SessionView, type StartInputs } from "@/lib/studio-session";
 import type { ConnectOptions, ConnState, LucyConnection, LucyFailure } from "@/lib/fal/signaling";
-import { MESSAGES } from "@/lib/studio-messages";
+import { MESSAGES, refundedText } from "@/lib/studio-messages";
 
 const json = (status: number, body: unknown) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
 interface Body { sessionId?: string; reason?: string; stats?: unknown; settings?: unknown }
@@ -246,7 +246,7 @@ describe("a connection that fails must not keep billing (item 1)", () => {
     t.conns[0].emit("failed", TIMEOUT.message, TIMEOUT);
     await tick(0);
     expect(vi.getTimerCount()).toBe(0);
-    expect(t.ends()).toEqual([{ sessionId: "s1", reason: "connection_failed" }]);
+    expect(t.ends()).toEqual([{ sessionId: "s1", reason: "connection_failed", failure: "answer_timeout" }]);
     expect(t.conns[0].closed).toBe(1);
     expect(t.remote.at(-1)).toBeNull();
     const v = t.s.view();
@@ -262,6 +262,27 @@ describe("a connection that fails must not keep billing (item 1)", () => {
     expect(t.ends()).toHaveLength(1);
     expect(t.s.view()).toMatchObject({ state: "failed", remaining });
     expect(t.s.view().notice?.text).toContain("didn't answer");
+  });
+
+  it("sends the failure code with the end call, and says so when the server refunded the session", async () => {
+    const ICE: LucyFailure = { code: "ice_failed", message: "Connection failed" };
+    const t = setup({ routes: { [END]: () => json(200, { remaining: 300, secondsBilled: 6, refunded: 6 }) } });
+    await t.s.start(INPUTS);
+    t.conns[0].emit("live");
+    t.s.firstFrame();
+    await tick(6000);
+    t.conns[0].emit("failed", ICE.message, ICE);
+    await tick(0);
+    expect(t.ends()).toEqual([{ sessionId: "s1", reason: "connection_failed", failure: "ice_failed" }]);
+    expect(t.s.view().notice?.text).toMatch(/The session was closed\. We refunded 6 credits\.$/);
+    expect(t.s.view().remaining).toBe(300);
+
+    const none = setup(); // the default end answer has no refund
+    await none.s.start(INPUTS);
+    none.conns[0].emit("failed", ICE.message, ICE);
+    await tick(0);
+    expect(none.s.view().notice?.text).not.toMatch(/refunded/);
+    expect(refundedText(1)).toBe("We refunded 1 credit.");
   });
 
   it("a 'closed' that follows a failure does not replace it with a bare 'Closed'", async () => {
@@ -312,7 +333,7 @@ describe("a connection that fails must not keep billing (item 1)", () => {
     endOk = true;
     t.setOnline(true);
     await tick(0);
-    expect(t.ends()).toEqual([{ sessionId: "s1", reason: "connection_failed" }, { sessionId: "s1", reason: "connection_failed" }]);
+    expect(t.ends()).toEqual([{ sessionId: "s1", reason: "connection_failed", failure: "answer_timeout" }, { sessionId: "s1", reason: "connection_failed", failure: "answer_timeout" }]);
     expect(t.s.view().remaining).toBe(270);
     t.setOnline(true);
     await tick(0);
@@ -367,7 +388,7 @@ describe("a connection that fails must not keep billing (item 1)", () => {
     await tick(0);
     expect(vi.getTimerCount()).toBe(0);
     expect(t.s.view().state).toBe("failed");
-    expect(t.ends()).toEqual([{ sessionId: "s1", reason: "connection_failed" }]);
+    expect(t.ends()).toEqual([{ sessionId: "s1", reason: "connection_failed", failure: "setup_error" }]);
   });
 
   it("connect() throwing is a failure, not an exception", async () => {
@@ -413,7 +434,7 @@ describe("Reconnect (item 5)", () => {
     expect(t.s.sessionId()).toBe("s2");
     expect(t.s.view()).toMatchObject({ state: "connecting", notice: null });
     expect(vi.getTimerCount()).toBe(3);
-    expect(t.ends()).toEqual([{ sessionId: "s1", reason: "connection_failed" }]); // the old one was ended once, at the failure
+    expect(t.ends()).toEqual([{ sessionId: "s1", reason: "connection_failed", failure: "answer_timeout" }]); // the old one was ended once, at the failure
     t.conns[1].emit("live");
     await tick(10_000);
     expect(t.to(BEAT).every((c) => c.body.sessionId === "s2")).toBe(true);
@@ -677,7 +698,7 @@ describe("Apply changes", () => {
     t.conns[1].emit("failed", TIMEOUT.message, TIMEOUT);
     await tick(0);
     expect(t.s.view().state).toBe("failed");
-    expect(t.ends()).toEqual([{ sessionId: "s1", reason: "connection_failed" }]);
+    expect(t.ends()).toEqual([{ sessionId: "s1", reason: "connection_failed", failure: "answer_timeout" }]);
     expect(vi.getTimerCount()).toBe(0);
   });
 

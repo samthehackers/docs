@@ -22,9 +22,9 @@ vi.mock("@fal-ai/server-proxy/nextjs", () => ({ createRouteHandler: () => ({ POS
 
 import { testDb } from "./helpers";
 import type { DB } from "@/lib/db";
-import { studioSessions, users } from "@/db/schema";
+import { auditLog, creditLedger, studioSessions, users } from "@/db/schema";
 import { grantCredits, ledgerBalance } from "@/lib/credits";
-import { CONNECT_GRACE_SECONDS, NEVER_LIVE_LIMIT, NEVER_LIVE_WINDOW_SECONDS } from "@/lib/plans";
+import { CONNECT_GRACE_SECONDS, NEVER_LIVE_LIMIT, NEVER_LIVE_WINDOW_SECONDS, REFUNDS_PER_DAY } from "@/lib/plans";
 import { activeSession, closeOpenSessions, sweepStaleSessions } from "@/lib/metering";
 import * as liveRoute from "@/app/api/studio/session/live/route";
 import * as heartbeatRoute from "@/app/api/studio/session/heartbeat/route";
@@ -250,5 +250,133 @@ describe("the never-connected cooldown on Go live", () => {
     await failures(3, NEVER_LIVE_WINDOW_SECONDS + 30); // outside the window
     await failures(NEVER_LIVE_LIMIT + 1, 60, "other");
     expect((await start()).status).toBe(200);
+  });
+});
+
+describe("early-drop refund (A3.4)", () => {
+  const end = (sessionId: string, reason: string, failure?: string) => post(endRoute, { sessionId, reason, ...(failure ? { failure } : {}) });
+  const ledger = async (sessionId: string) => (await d.select().from(creditLedger).where(eq(creditLedger.refId, sessionId))).map((r) => ({ delta: r.delta, bucket: r.bucket, reason: r.reason }));
+  const audits = async (action: string) => (await d.select().from(auditLog)).filter((a) => a.action === action);
+  /** A live session, `liveAgo` s into its live time, already billed `billed` s by heartbeats. */
+  const live = async (liveAgo: number, billed = 0, userId = "u") => {
+    const id = await session(userId, liveAgo + 3, liveAgo, { lastHeartbeatAt: ago(1) });
+    if (billed) await meterHeartbeat(id, userId, billed, liveAgo);
+    return id;
+  };
+  /** Bill `secs` seconds of `id` the way a heartbeat would, so the ledger holds real session debits. */
+  async function meterHeartbeat(id: string, userId: string, secs: number, liveAgo: number) {
+    const { meterSession } = await import("@/lib/metering");
+    await meterSession(id, userId, { now: new Date(Date.now() - (liveAgo - secs) * 1000) });
+  }
+
+  it.each(["ice_failed", "model_error", "socket_error", "connection_lost"])("refunds a %s within the first 10 s of live time, to the bucket it came from", async (failure) => {
+    const id = await live(6, 5);
+    const before = await balance();
+    const res = await end(id, "connection_failed", failure);
+    const body = await res.json();
+    const charged = (await row(id)).secondsBilled;
+    expect(charged).toBeGreaterThanOrEqual(6);
+    expect(body).toMatchObject({ refunded: charged, secondsBilled: charged });
+    expect(await balance()).toBe(before + 5); // the 5 s billed before, plus the end's own debit, all given back
+    expect(body.remaining).toBe(5000);
+    expect(await row(id)).toMatchObject({ endReason: "connection_failed", failureCode: failure, refundedCredits: charged });
+    expect((await row(id)).refundedAt).not.toBeNull();
+    const rows = await ledger(id);
+    expect(rows.filter((r) => r.reason === "session_refund")).toEqual([{ delta: charged, bucket: "monthly", reason: "session_refund" }]);
+    expect(rows.reduce((n, r) => n + r.delta, 0)).toBe(0);
+    const [a] = await audits("session.refund");
+    expect(a).toMatchObject({ actorId: "system", target: "u", meta: { sessionId: id, failure, credits: charged, monthly: charged, purchased: 0 } });
+  });
+
+  it("gives back exactly what each bucket was charged when a session spilled into top-up credits", async () => {
+    await d.execute(sql`truncate credit_ledger restart identity`);
+    await d.execute(sql`update users set credits_monthly = 0, credits_purchased = 0`);
+    await grantCredits(d, "u", 3, "monthly", "seed");
+    await grantCredits(d, "u", 100, "purchased", "seed");
+    const id = await live(7, 0);
+    const res = await end(id, "connection_failed", "ice_failed");
+    expect((await res.json()).refunded).toBe(7);
+    const refunds = (await ledger(id)).filter((r) => r.reason === "session_refund");
+    expect(refunds.sort((a, b) => a.bucket.localeCompare(b.bucket))).toEqual([
+      { delta: 3, bucket: "monthly", reason: "session_refund" }, { delta: 4, bucket: "purchased", reason: "session_refund" },
+    ]);
+    expect(await ledgerBalance(d, "u")).toMatchObject({ monthly: 3, purchased: 100 });
+    const [u] = await d.select().from(users).where(eq(users.id, "u"));
+    expect({ m: u.creditsMonthly, p: u.creditsPurchased }).toEqual({ m: 3, p: 100 }); // the cached balance moved with the ledger
+  });
+
+  it("no refund for the user's own Stop, a camera loss or a Reconnect, even in the first seconds", async () => {
+    for (const reason of ["user", "camera_lost", "reconnect"]) {
+      const id = await live(5, 0);
+      expect((await (await end(id, reason, "ice_failed")).json()).refunded).toBe(0);
+      expect((await row(id)).refundedAt).toBeNull();
+      expect((await row(id)).failureCode).toBeNull(); // a failure code only counts with connection_failed
+    }
+    expect(await audits("session.refund")).toHaveLength(0);
+  });
+
+  it("no refund for failures that are not on the connection or the AI service", async () => {
+    for (const failure of ["bad_answer", "setup_error", "token_refused", "token_unreachable", "answer_timeout", "connect_timeout"]) {
+      const id = await live(4, 0);
+      expect((await (await end(id, "connection_failed", failure)).json()).refunded).toBe(0);
+      expect(await row(id)).toMatchObject({ failureCode: failure, refundedCredits: 0 });
+    }
+  });
+
+  it("no refund after the first 10 s of live time", async () => {
+    const id = await live(12, 10);
+    const before = await balance();
+    expect((await (await end(id, "connection_failed", "ice_failed")).json()).refunded).toBe(0);
+    expect(await balance()).toBeLessThan(before);
+    expect((await ledger(id)).some((r) => r.reason === "session_refund")).toBe(false);
+  });
+
+  it("refunds once: a second end call reports the same refund and changes nothing", async () => {
+    const id = await live(5, 0);
+    const first = await (await end(id, "connection_failed", "socket_error")).json();
+    const balanceAfter = await balance();
+    const second = await (await end(id, "connection_failed", "socket_error")).json();
+    expect(second.refunded).toBe(first.refunded);
+    expect(await balance()).toBe(balanceAfter);
+    expect((await ledger(id)).filter((r) => r.reason === "session_refund")).toHaveLength(1);
+    expect(await audits("session.refund")).toHaveLength(1);
+  });
+
+  it("the database itself refuses a second refund row for the same session and bucket", async () => {
+    const id = await live(5, 0);
+    await end(id, "connection_failed", "socket_error");
+    await expect(d.insert(creditLedger).values({ userId: "u", delta: 5, bucket: "monthly", reason: "session_refund", refType: "session", refId: id })).rejects.toThrow();
+    const { refundSessionDebits } = await import("@/lib/credits");
+    const again = await d.transaction((tx) => refundSessionDebits(tx as never, "u", id));
+    expect(again.total).toBe(0); // nothing left owed: the ledger says it was all given back
+  });
+
+  it(`at most ${REFUNDS_PER_DAY} refunds per user in 24 hours; the one refused is in the audit log; older ones do not count`, async () => {
+    await session("u", 90_000, 89_990, { endedAt: ago(89_900), endReason: "connection_failed", refundedAt: ago(89_900), refundedCredits: 5 }); // 25 h ago
+    for (let i = 0; i < REFUNDS_PER_DAY; i++) {
+      const id = await live(5, 0);
+      expect((await (await end(id, "connection_failed", "ice_failed")).json()).refunded).toBeGreaterThan(0);
+    }
+    const over = await live(5, 0);
+    expect((await (await end(over, "connection_failed", "ice_failed")).json()).refunded).toBe(0);
+    expect((await row(over)).refundedAt).toBeNull();
+    const [refused] = await audits("session.refund_refused");
+    expect(refused).toMatchObject({ target: "u", meta: { sessionId: over, why: "daily_limit" } });
+    // Another user's quota is their own.
+    const theirs = await live(5, 0, "other");
+    h.me = "other";
+    expect((await (await end(theirs, "connection_failed", "ice_failed")).json()).refunded).toBeGreaterThan(0);
+  });
+
+  it("a session that never went live is not refunded (it was never charged) and does not use up the daily quota", async () => {
+    const id = await session("u", 6, null);
+    expect((await (await end(id, "connection_failed", "ice_failed")).json()).refunded).toBe(0);
+    expect(await row(id)).toMatchObject({ endReason: "failed_connect", failureCode: "ice_failed", refundedAt: null });
+  });
+
+  it("rejects a failure code outside the known set", async () => {
+    const id = await live(5, 0);
+    expect((await end(id, "connection_failed", "server_exploded")).status).toBe(400);
+    expect((await row(id)).endedAt).toBeNull();
   });
 });

@@ -1,4 +1,4 @@
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { creditLedger, users } from "@/db/schema";
 import type { DB, Tx } from "@/lib/db";
 import { allocateDebit } from "@/lib/credits-math";
@@ -47,6 +47,28 @@ export async function debitCredits(tx: Tx, userId: string, amount: number, reaso
     await bump(tx, userId, "purchased", -a.fromPurchased);
   }
   return { debited: a.fromMonthly + a.fromPurchased, monthly: a.fromMonthly, purchased: a.fromPurchased };
+}
+
+/**
+ * Give back what one studio session was charged, to the bucket(s) it was actually taken from, in the caller's
+ * transaction (which must hold the session's row lock). The amount is read from the ledger itself (the session's
+ * `session` debits minus any `session_refund` already made for it), so a refund can never exceed the charge, and the
+ * unique index ledger_session_refund_uq makes a second refund row for the same session and bucket impossible.
+ */
+export async function refundSessionDebits(tx: Tx, userId: string, sessionId: string) {
+  await tx.execute(sql`select 1 from ${users} where ${users.id} = ${userId} for update`);
+  const rows = await tx.select({ bucket: creditLedger.bucket, reason: creditLedger.reason, total: sql<number>`coalesce(sum(${creditLedger.delta}),0)::int` })
+    .from(creditLedger)
+    .where(and(eq(creditLedger.userId, userId), eq(creditLedger.refType, "session"), eq(creditLedger.refId, sessionId), inArray(creditLedger.reason, ["session", "session_refund"])))
+    .groupBy(creditLedger.bucket, creditLedger.reason);
+  const owed = (b: Bucket) => Math.max(0, -rows.filter((r) => r.bucket === b).reduce((n, r) => n + r.total, 0));
+  const out = { monthly: owed("monthly"), purchased: owed("purchased") };
+  for (const bucket of ["monthly", "purchased"] as const) {
+    if (out[bucket] <= 0) continue;
+    await tx.insert(creditLedger).values({ userId, delta: out[bucket], bucket, reason: "session_refund", refType: "session", refId: sessionId });
+    await bump(tx, userId, bucket, out[bucket]);
+  }
+  return { ...out, total: out.monthly + out.purchased };
 }
 
 /** Monthly refill: expire unused monthly credits, then grant the new allowance. Purchased credits are untouched. */

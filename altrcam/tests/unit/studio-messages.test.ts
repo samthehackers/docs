@@ -5,6 +5,8 @@
 import { describe, expect, it } from "vitest";
 import { describeFailure, describeStartFailure, MESSAGES, STUDIO_NOTICES } from "@/lib/studio-messages";
 import type { FailureCode, LucyFailure } from "@/lib/fal/signaling";
+import { CLIENT_FAILURE_CODES } from "@/lib/session-end";
+import { REFUNDABLE_FAILURES } from "@/lib/plans";
 
 const CODES: FailureCode[] = ["token_refused", "token_unreachable", "socket_error", "model_error", "bad_answer", "answer_timeout", "ice_failed", "connection_lost", "setup_error"];
 
@@ -13,6 +15,12 @@ describe("connection failures", () => {
     const texts = CODES.map((code) => describeFailure({ code, message: "Model error" }));
     expect(new Set(texts).size).toBe(CODES.length);
     for (const t of texts) { expect(t).toMatch(/[.]$/); expect(t).not.toMatch(/undefined|null|\[object/); }
+  });
+
+  it("every failure code is one the end route accepts, and only connection or AI-service failures are refundable", () => {
+    for (const c of CODES) expect(CLIENT_FAILURE_CODES).toContain(c);
+    for (const c of REFUNDABLE_FAILURES) expect(CODES).toContain(c);
+    expect([...REFUNDABLE_FAILURES].sort()).toEqual(["connection_lost", "ice_failed", "model_error", "socket_error"]);
   });
 
   it("a refused token says what the status means", () => {

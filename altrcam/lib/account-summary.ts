@@ -62,6 +62,7 @@ const LEDGER_LABELS: Record<string, string> = {
   admin_grant: "Credits added by AltrCam",
   admin_revoke: "Credits removed by AltrCam",
   session: "Live session",
+  session_refund: "Refund for a session that dropped early",
 };
 export const ledgerReasonLabel = (reason: string) => LEDGER_LABELS[reason] ?? "Other credit change";
 

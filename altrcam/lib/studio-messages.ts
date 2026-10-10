@@ -31,6 +31,9 @@ export const MESSAGES = {
   unreadableStart: "The server's reply to starting a session was unreadable. Try again.",
 } as const;
 
+/** Shown when the server gave back what a session that dropped early was charged (lib/metering.ts refundEarlyDrop). */
+export const refundedText = (n: number) => `We refunded ${n.toLocaleString("en")} credit${n === 1 ? "" : "s"}.`;
+
 /** A message shown above the controls. `retryLabel` makes the primary button a retry with that label. */
 export interface Notice {
   tone: "error" | "info";

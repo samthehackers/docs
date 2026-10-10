@@ -17,7 +17,7 @@
  */
 import type { ConnectOptions, ConnState, LucyConnection, LucyFailure, RtcStats } from "@/lib/fal/signaling";
 import type { ClientEndReason } from "@/lib/session-end";
-import { describeFailure, describeStartFailure, MESSAGES, type Notice } from "@/lib/studio-messages";
+import { describeFailure, describeStartFailure, MESSAGES, refundedText, type Notice } from "@/lib/studio-messages";
 
 export interface StartInputs {
   prompt: string;
@@ -85,6 +85,13 @@ export function initialSessionView(balance: number): SessionView {
 
 const JSON_HEADERS = { "Content-Type": "application/json" };
 
+/** The failure code sent with an end call: the connection's own, or the Studio's connect timeout. */
+type EndFailure = LucyFailure["code"] | "connect_timeout";
+interface EndCall { id: string; reason: ClientEndReason; failure?: EndFailure }
+/** What the server confirmed when it closed a session. */
+interface Ended { refunded: number }
+const endBody = (e: EndCall) => ({ sessionId: e.id, reason: e.reason, ...(e.failure ? { failure: e.failure } : {}) });
+
 export function createStudioSession(d: SessionDeps): StudioSession {
   let view: SessionView = { ...initialSessionView(d.balance), offline: !d.network.online() };
   const listeners = new Set<(v: SessionView) => void>();
@@ -98,7 +105,7 @@ export function createStudioSession(d: SessionDeps): StudioSession {
   let hb: ReturnType<typeof setInterval> | null = null;
   let statTimer: ReturnType<typeof setInterval> | null = null;
   let lastStats: RtcStats | null = null;
-  let pendingEnd: { id: string; reason: ClientEndReason } | null = null; // an end the server hasn't confirmed yet
+  let pendingEnd: EndCall | null = null; // an end the server hasn't confirmed yet
   let framed: string | null = null;    // the session whose first transformed frame has rendered
   let liveSent: string | null = null;  // the session whose live time the server has confirmed
 
@@ -124,21 +131,23 @@ export function createStudioSession(d: SessionDeps): StudioSession {
     set({ stats: null });
   }
 
-  /** Tell the server the session is over. If it can't be reached, remember to try again when the browser is back online. */
-  async function endServerSession(id: string, reason: ClientEndReason): Promise<boolean> {
+  /**
+   * Tell the server the session is over (with the failure code when a connection failed: an early drop may be refunded).
+   * Resolves to what the server confirmed, or null if it can't be reached, in which case the call is remembered and
+   * tried again when the browser is back online.
+   */
+  async function endServerSession(id: string, reason: ClientEndReason, failure?: EndFailure): Promise<Ended | null> {
     try {
-      const r = await d.fetch("/api/studio/session/end", { method: "POST", headers: JSON_HEADERS, body: JSON.stringify({ sessionId: id, reason }) });
+      const r = await d.fetch("/api/studio/session/end", { method: "POST", headers: JSON_HEADERS, body: JSON.stringify(endBody({ id, reason, failure })) });
       if (r.ok || r.status === 404) { // 404: not ours or already gone, nothing left to close
         if (pendingEnd?.id === id) pendingEnd = null;
-        if (r.ok && sid === null) {
-          const j = (await r.json().catch(() => null)) as { remaining?: unknown } | null;
-          if (typeof j?.remaining === "number") set({ remaining: j.remaining });
-        }
-        return true;
+        const j = r.ok ? (await r.json().catch(() => null)) as { remaining?: unknown; refunded?: unknown } | null : null;
+        if (sid === null && typeof j?.remaining === "number") set({ remaining: j.remaining });
+        return { refunded: typeof j?.refunded === "number" && j.refunded > 0 ? j.refunded : 0 };
       }
     } catch { /* network */ }
-    pendingEnd = { id, reason };
-    return false;
+    pendingEnd = { id, reason, failure };
+    return null;
   }
 
   function startTimers() {
@@ -239,8 +248,11 @@ export function createStudioSession(d: SessionDeps): StudioSession {
     const notice: Notice = { tone: "error", text: base, retryLabel: "Reconnect", hint: MESSAGES.reconnectHint };
     set({ state: "failed", notice });
     if (!id) return;
-    const ok = await endServerSession(id, "connection_failed");
-    if (view.notice === notice) set({ notice: { ...notice, text: `${base} ${ok ? MESSAGES.sessionClosed : MESSAGES.endUnconfirmed}` } });
+    const ended = await endServerSession(id, "connection_failed", f.code);
+    if (view.notice === notice) {
+      const refund = ended?.refunded ? ` ${refundedText(ended.refunded)}` : "";
+      set({ notice: { ...notice, text: `${base} ${ended ? MESSAGES.sessionClosed : MESSAGES.endUnconfirmed}${refund}` } });
+    }
   }
 
   async function stop(why: { notice?: Notice; reason?: ClientEndReason } = {}) {
@@ -251,7 +263,7 @@ export function createStudioSession(d: SessionDeps): StudioSession {
     teardown();
     set({ state: "idle", notice: why.notice ?? null });
     if (id) {
-      const ok = await endServerSession(id, why.reason ?? "user");
+      const ok = (await endServerSession(id, why.reason ?? "user")) !== null;
       // A Stop the server never heard about leaves the session open until the sweep or the next start closes it: say so.
       if (!ok && !disposed && view.state === "idle" && !view.notice) set({ notice: { tone: "error", text: MESSAGES.endUnconfirmed } });
     }
@@ -328,7 +340,7 @@ export function createStudioSession(d: SessionDeps): StudioSession {
   function onNetwork() {
     const online = d.network.online();
     set({ offline: !online });
-    if (online && pendingEnd) { const p = pendingEnd; void endServerSession(p.id, p.reason); }
+    if (online && pendingEnd) { const p = pendingEnd; void endServerSession(p.id, p.reason, p.failure); }
   }
   const unsubscribeNetwork = d.network.subscribe(onNetwork);
 
@@ -345,7 +357,7 @@ export function createStudioSession(d: SessionDeps): StudioSession {
     dispose: () => {
       if (disposed) return;
       disposed = true; // no more notifications from here on
-      const ending = [sid ? { id: sid, reason: "user" as ClientEndReason } : null, pendingEnd].filter((e) => e !== null);
+      const ending = [sid ? { id: sid, reason: "user" as ClientEndReason } : null, pendingEnd].filter((e): e is EndCall => e !== null);
       sid = null;
       pendingEnd = null;
       run++;
@@ -354,7 +366,7 @@ export function createStudioSession(d: SessionDeps): StudioSession {
       unsubscribeNetwork();
       listeners.clear();
       // Best effort: the page may be going away. A session left open is closed by the server's sweep.
-      for (const e of ending) void d.fetch("/api/studio/session/end", { method: "POST", headers: JSON_HEADERS, body: JSON.stringify({ sessionId: e.id, reason: e.reason }) }).catch(() => {});
+      for (const e of ending) void d.fetch("/api/studio/session/end", { method: "POST", headers: JSON_HEADERS, body: JSON.stringify(endBody(e)) }).catch(() => {});
     },
   };
 }

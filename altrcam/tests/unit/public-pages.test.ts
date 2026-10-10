@@ -29,7 +29,7 @@ import Privacy from "@/app/(marketing)/privacy/page";
 import SignUpPage from "@/app/(auth)/sign-up/[[...sign-up]]/page";
 import SignInPage from "@/app/(auth)/sign-in/[[...sign-in]]/page";
 import { StudioCta } from "@/components/studio-cta";
-import { DEFAULT_PLANS } from "@/lib/plans";
+import { DEFAULT_PLANS, EARLY_DROP_SECONDS, REFUNDS_PER_DAY } from "@/lib/plans";
 import { PAYMENT_METHODS_TEXT } from "@/lib/public-copy";
 import { HOW_IT_WORKS_STEPS } from "@/components/how-it-works-steps";
 import { CREDITS_RULE, LIVE_AVAILABILITY } from "@/lib/availability";
@@ -263,6 +263,13 @@ describe("review follow-ups: the pages that ask for money, and sentences tied to
     expect(terms).toMatch(/1 credit equals 1 second of live transformed video, counted from when the transformed video first appears/);
     expect(terms).toMatch(/a session that never connects uses no credits/);
     expect(terms).not.toMatch(/including time spent connecting|counted from when you press Go live/);
+  });
+  it("the FAQ states the early-drop refund with the limits the code applies", () => {
+    const t = plain(faq());
+    expect(t).toContain("What if the video drops right after it starts?");
+    expect(t).toContain(`within its first ${EARLY_DROP_SECONDS} seconds because the connection or the AI service failed`);
+    expect(t).toContain(`up to ${REFUNDS_PER_DAY} times a day`);
+    expect(t).toMatch(/Stopping it yourself is not refunded/);
   });
   it("every page that states the credit rule states the one the code enforces", () => {
     const t = plain(faq());

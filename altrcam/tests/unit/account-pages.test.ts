@@ -302,7 +302,7 @@ describe("/support", () => {
     expect(t).toMatch(/checking in|check-in/i);
     // payments
     expect(t).toMatch(/charged twice/i);
-    expect(t).toMatch(/Refunds are not automatic/);
+    expect(t).toMatch(/Payment refunds are not automatic/);
     // deletion
     expect(t).toMatch(/Delete account/);
     // video only

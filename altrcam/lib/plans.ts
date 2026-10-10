@@ -88,6 +88,15 @@ export const CONNECT_GRACE_SECONDS = 30;
  */
 export const NEVER_LIVE_LIMIT = 5;
 export const NEVER_LIVE_WINDOW_SECONDS = 600;
+/**
+ * Early-drop refund: a session that ends within its first EARLY_DROP_SECONDS of live time because the connection or the
+ * AI service failed (the browser sends one of REFUNDABLE_FAILURES with the end call) gets back what it was charged, to
+ * the bucket(s) it came from. The code comes from the browser, so: at most one refund per session, and at most
+ * REFUNDS_PER_DAY per user in any 24 hours. Every refund, and every one refused by that limit, is in the audit log.
+ */
+export const EARLY_DROP_SECONDS = 10;
+export const REFUNDS_PER_DAY = 3;
+export const REFUNDABLE_FAILURES = ["ice_failed", "model_error", "socket_error", "connection_lost"] as const;
 
 /** Referral program. The referrer is rewarded once, when the friend first pays for Pro or Lifetime. */
 export const REFERRAL = {

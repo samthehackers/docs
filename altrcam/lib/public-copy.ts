@@ -63,7 +63,7 @@ export function billingDetails({ currency, yearlyPrice, pricesApproved }: { curr
     { term: "Lifetime", text: "A one-time payment with no renewal. The Terms do not yet say how long \"lifetime\" lasts." },
     {
       term: "Refunds",
-      text: "Payments are non-refundable except where the law requires otherwise. Refunds are not automatic: if something went wrong with a payment, contact us and it is reviewed by hand. The Terms page is still template text. See:",
+      text: "Payments are non-refundable except where the law requires otherwise. Payment refunds are not automatic: if something went wrong with a payment, contact us and it is reviewed by hand. The Terms page is still template text. See:",
       links: [{ label: "Terms", href: "/terms" }, { label: "Contact us", href: "/contact" }],
     },
   ];

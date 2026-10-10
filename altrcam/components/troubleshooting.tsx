@@ -6,7 +6,7 @@
  */
 import Link from "next/link";
 import { fmtSessionLimit } from "@/lib/account-summary";
-import { CREDITS_RULE } from "@/lib/availability";
+import { CREDITS_RULE, EARLY_DROP_REFUND } from "@/lib/availability";
 import { HEARTBEAT_SECONDS, NEVER_LIVE_LIMIT, NEVER_LIVE_WINDOW_SECONDS, STALE_AFTER_SECONDS, type Plan, type PlanConfig } from "@/lib/plans";
 import { fmtNum } from "@/lib/utils";
 
@@ -71,6 +71,7 @@ export function troubleshootingItems(plans: Record<Plan, PlanConfig>): Troublesh
           <Ul>
             <li><b>Monthly credits</b> come with your plan ({fmtNum(plans.FREE.monthlyCredits)} on Free, {fmtNum(plans.PRO.monthlyCredits)} on Pro). They refill at the start of each month (UTC). Unused monthly credits expire and do not roll over.</li>
             <li><b>Purchased credits</b> come from top-ups, never expire, and are used only after your monthly credits run out.</li>
+            <li><b>Early drops.</b> {EARLY_DROP_REFUND} They go back to the kind of credits they came from, and the Studio says &ldquo;We refunded&rdquo; and how many. The Dashboard lists them.</li>
             <li>When the balance reaches zero the session stops by itself. To keep going, top up or upgrade on the <A href="/billing">Billing</A> page, or wait for the next monthly refill.</li>
             <li>The <A href="/dashboard">Dashboard</A> shows your balance split by kind, how much of your monthly allowance you have used, and your recent sessions with the credits each one used.</li>
           </Ul>
@@ -111,7 +112,7 @@ export function troubleshootingItems(plans: Record<Plan, PlanConfig>): Troublesh
             <li><b>Bought Lifetime while on Pro.</b> We ask the payment provider to stop the Pro subscription. If a Pro charge still arrives afterwards, your plan stays Lifetime and the charge can be reviewed for a refund. Contact support.</li>
             <li><b>Stopping renewals.</b> Cancel from Billing. Pro then stays active until the end of the period you paid for.</li>
           </Ul>
-          <p className="mt-2">Refunds are not automatic. The app does not process them, so any refund or correction is looked at and done by hand. Our <A href="/terms">Terms</A> say payments are non-refundable except where the law requires otherwise.</p>
+          <p className="mt-2">Payment refunds are not automatic. The app does not process them, so any refund of a payment or correction is looked at and done by hand. (Credits for a live session that drops in its first seconds are a separate thing: see the credits answer above.) Our <A href="/terms">Terms</A> say payments are non-refundable except where the law requires otherwise.</p>
         </>
       ),
     },

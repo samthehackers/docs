@@ -6,7 +6,8 @@
  */
 import Link from "next/link";
 import { fmtSessionLimit } from "@/lib/account-summary";
-import { HEARTBEAT_SECONDS, STALE_AFTER_SECONDS, type Plan, type PlanConfig } from "@/lib/plans";
+import { CREDITS_RULE, EARLY_DROP_REFUND } from "@/lib/availability";
+import { CONNECT_TIMEOUT_SECONDS, HEARTBEAT_SECONDS, NEVER_LIVE_LIMIT, NEVER_LIVE_WINDOW_SECONDS, STALE_AFTER_SECONDS, type Plan, type PlanConfig } from "@/lib/plans";
 import { fmtNum } from "@/lib/utils";
 
 export interface TroubleshootingItem { id: string; title: string; body: React.ReactNode }
@@ -43,18 +44,20 @@ export function troubleshootingItems(plans: Record<Plan, PlanConfig>): Troublesh
           <p className="mt-2">What the status badge means:</p>
           <Ul>
             <li><b>Ready:</b> your camera is open and nothing is being sent yet.</li>
-            <li><b>Connecting:</b> a session has started and the Studio is waiting for the AI service to answer. It also shows if a live connection is interrupted while the browser tries to recover it.</li>
-            <li><b>Live:</b> the transformed video is coming back.</li>
-            <li><b>Failed or Closed:</b> the connection could not be made, broke, or was shut down. When the Studio has a reason it appears next to the badge, so quote it in a ticket.</li>
+            <li><b>Connecting:</b> a session has started and the Studio is waiting for the transformed video. Nothing is charged yet. If no video shows within {CONNECT_TIMEOUT_SECONDS} seconds the Studio stops and offers Try again. If the direct video connection can&apos;t be set up, it tries once more on its own with a new session.</li>
+            <li><b>Live:</b> the transformed video is on screen, and credits are counting.</li>
+            <li><b>Reconnecting:</b> a live connection was interrupted and the browser is trying to recover it, or Apply changes is restarting it. It is still the same session, so credits keep counting.</li>
+            <li><b>Ended:</b> the session is over, because you stopped it or because the connection could not be made or broke. When the Studio has a reason it appears above the controls, so quote it in a ticket.</li>
           </Ul>
           <p className="mt-2">Things to try, in order:</p>
           <Ul>
-            <li>Press Reconnect (or Stop, then Go live again). This starts a fresh session, billed from its own start, and a new session closes any earlier one. Each attempt is billed for the time it was open, so if it fails the same way twice, fix the cause before trying again.</li>
+            <li>Press Reconnect (or Stop, then Go live again). This starts a fresh session, and a new session closes any earlier one. An attempt that never shows transformed video costs nothing, but if it fails the same way twice, fix the cause before trying again.</li>
             <li>Check that your internet is steady in both directions. Moving closer to the router or using a cable helps.</li>
             <li>Turn off any VPN, or try another network such as a phone hotspot. Some VPNs, proxies and work or school firewalls block the kind of real-time connection (WebRTC) that video needs.</li>
             <li>While you are live, the Studio shows FPS, round-trip time, jitter and packet loss. High round-trip time or packet loss points to the network.</li>
             <li>Apply changes restarts the connection so a new prompt or reference image takes effect, so a short interruption after pressing it is expected.</li>
           </Ul>
+          <p className="mt-2">After several attempts in a row that never show transformed video (more than {NEVER_LIVE_LIMIT} in {NEVER_LIVE_WINDOW_SECONDS / 60} minutes), Go live is paused for a few minutes and the Studio says how long. Those attempts cost nothing; the pause is there to stop misuse, and it lifts by itself.</p>
           <p className="mt-2">If the Studio says live transformation isn&apos;t available because the service is not configured, the live service is not switched on for this deployment and there is nothing to fix on your side.</p>
           <p className="mt-2">If it still fails on a good connection with no VPN, the cause may be on our side. Send a ticket with the status message you see and what you tried.</p>
         </>
@@ -65,10 +68,11 @@ export function troubleshootingItems(plans: Record<Plan, PlanConfig>): Troublesh
       title: "I'm out of credits, or my credits look wrong",
       body: (
         <>
-          <p><b>1 credit = 1 second</b> of live video. Our server counts the seconds while a session is open, and nothing is spent while you are not live.</p>
+          <p><b>1 credit = 1 second</b> of live transformed video. Our server counts the seconds from the moment your transformed video first appears until the session ends. {CREDITS_RULE}</p>
           <Ul>
             <li><b>Monthly credits</b> come with your plan ({fmtNum(plans.FREE.monthlyCredits)} on Free, {fmtNum(plans.PRO.monthlyCredits)} on Pro). They refill at the start of each month (UTC). Unused monthly credits expire and do not roll over.</li>
             <li><b>Purchased credits</b> come from top-ups, never expire, and are used only after your monthly credits run out.</li>
+            <li><b>Early drops.</b> {EARLY_DROP_REFUND} They go back to the kind of credits they came from, and the Studio says &ldquo;We refunded&rdquo; and how many. The Dashboard lists them.</li>
             <li>When the balance reaches zero the session stops by itself. To keep going, top up or upgrade on the <A href="/billing">Billing</A> page, or wait for the next monthly refill.</li>
             <li>The <A href="/dashboard">Dashboard</A> shows your balance split by kind, how much of your monthly allowance you have used, and your recent sessions with the credits each one used.</li>
           </Ul>
@@ -109,7 +113,7 @@ export function troubleshootingItems(plans: Record<Plan, PlanConfig>): Troublesh
             <li><b>Bought Lifetime while on Pro.</b> We ask the payment provider to stop the Pro subscription. If a Pro charge still arrives afterwards, your plan stays Lifetime and the charge can be reviewed for a refund. Contact support.</li>
             <li><b>Stopping renewals.</b> Cancel from Billing. Pro then stays active until the end of the period you paid for.</li>
           </Ul>
-          <p className="mt-2">Refunds are not automatic. The app does not process them, so any refund or correction is looked at and done by hand. Our <A href="/terms">Terms</A> say payments are non-refundable except where the law requires otherwise.</p>
+          <p className="mt-2">Payment refunds are not automatic. The app does not process them, so any refund of a payment or correction is looked at and done by hand. (Credits for a live session that drops in its first seconds are a separate thing: see the credits answer above.) Our <A href="/terms">Terms</A> say payments are non-refundable except where the law requires otherwise.</p>
         </>
       ),
     },

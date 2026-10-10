@@ -34,7 +34,7 @@ beforeEach(async () => {
   await d.insert(users).values([{ id: "u", email: "u@x.co", name: "U", plan: "PRO" }, { id: "other", email: "o@x.co", name: "O", plan: "PRO" }]);
   await grantCredits(d, "u", 5000, "monthly", "seed");
   await d.insert(studioSessions).values([
-    { id: OPEN, userId: "u", maxSeconds: 1800, startedAt: new Date(Date.now() - 20_000) },
+    { id: OPEN, userId: "u", maxSeconds: 1800, startedAt: new Date(Date.now() - 25_000), liveAt: new Date(Date.now() - 20_000) },
     { id: OTHERS, userId: "other", maxSeconds: 1800, startedAt: new Date(Date.now() - 20_000) },
   ]);
 });
@@ -43,12 +43,22 @@ const end = (body: unknown) => endRoute.POST(new Request("http://x/api/studio/se
 const row = async (id: string) => (await d.select().from(studioSessions).where(eq(studioSessions.id, id)))[0];
 
 describe("ending a session", () => {
-  it.each(CLIENT_END_REASONS)("records the reason %s and bills the time the session was open", async (reason) => {
+  it.each(CLIENT_END_REASONS)("records the reason %s and bills the live time (from the first frame)", async (reason) => {
     const res = await end({ sessionId: OPEN, reason });
     expect(res.status).toBe(200);
     expect(await row(OPEN)).toMatchObject({ endReason: reason });
     expect((await row(OPEN)).endedAt).not.toBeNull();
-    expect((await row(OPEN)).secondsBilled).toBeGreaterThanOrEqual(19); // a failed attempt is billed for the time it was open
+    expect((await row(OPEN)).secondsBilled).toBeGreaterThanOrEqual(19); // live for 20 s (it spent 5 s connecting first, free)
+    expect((await row(OPEN)).secondsBilled).toBeLessThanOrEqual(21);
+  });
+
+  it("a session that never showed a frame is closed with nothing billed", async () => {
+    const CONNECTING = "00000000-0000-4000-8000-000000000003";
+    await d.insert(studioSessions).values({ id: CONNECTING, userId: "u", maxSeconds: 1800, startedAt: new Date(Date.now() - 12_000) });
+    const res = await end({ sessionId: CONNECTING, reason: "user" });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ secondsBilled: 0, remaining: 5000 });
+    expect(await row(CONNECTING)).toMatchObject({ endReason: "user", secondsBilled: 0, liveAt: null });
   });
 
   it("defaults to 'user' when no reason is sent", async () => {

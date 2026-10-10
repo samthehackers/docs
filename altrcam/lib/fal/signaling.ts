@@ -24,7 +24,7 @@
  * ordering above does not depend on any name. Nothing here has been run against the live service.
  */
 import { fal } from "@fal-ai/client";
-import { FAL_APP, FAL_APP_ALIAS, SESSION_HEADER } from "./config";
+import { FAL_APP, FAL_APP_ALIAS, SESSION_HEADER, TOKEN_EXPIRATION_SECONDS } from "./config";
 
 export interface LucyInputs {
   prompt: string;
@@ -90,8 +90,7 @@ const DISCONNECT_GRACE_MS = 15000;
 const ICE_CONNECT_TIMEOUT_MS = 30000;
 const TOKEN_PROXY_URL = "/api/fal/proxy";
 const TOKEN_TARGET_URL = "https://rest.fal.ai/tokens/";
-/** Same lifetime the fal client asks for by default. The proxy refuses more than 300. */
-const TOKEN_EXPIRATION_SECONDS = 120;
+// TOKEN_EXPIRATION_SECONDS (lib/fal/config.ts): the same lifetime the fal client asks for by default, and the proxy's maximum.
 
 class TokenError extends Error {
   constructor(message: string, readonly status?: number) { super(message); }

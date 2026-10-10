@@ -2,7 +2,7 @@ import type { NextRequest } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { createRouteHandler } from "@fal-ai/server-proxy/nextjs";
 import { activeSession } from "@/lib/metering";
-import { FAL_APP_ALIASES } from "@/lib/fal/config";
+import { FAL_APP_ALIASES, TOKEN_EXPIRATION_SECONDS } from "@/lib/fal/config";
 
 export const runtime = "nodejs";
 
@@ -22,6 +22,8 @@ async function guard(req: NextRequest) {
   if (!userId) return deny(401, "Unauthorized");
   if (req.method !== "POST") return deny(405, "Method not allowed");
 
+  // Tokens only for the caller's own open, heartbeating session that is live or still inside its 30 s connect window
+  // (lib/metering.ts activeSession): a session that never goes live cannot keep minting tokens.
   const sessionId = req.headers.get("x-altrcam-session");
   if (!sessionId || !(await activeSession(sessionId, userId))) return deny(403, "No active studio session");
 
@@ -33,7 +35,9 @@ async function guard(req: NextRequest) {
   const body = (await req.clone().json().catch(() => null)) as { allowed_apps?: unknown; token_expiration?: unknown } | null;
   const apps = body?.allowed_apps;
   if (!Array.isArray(apps) || apps.length !== 1 || !FAL_APP_ALIASES.includes(String(apps[0]))) return deny(400, "App not allowed");
-  if (typeof body?.token_expiration === "number" && body.token_expiration > 300) return deny(400, "Token lifetime too long");
+  // A missing lifetime would let fal pick its own default, so it must be given, and no longer than the Studio asks for.
+  const ttl = body?.token_expiration;
+  if (typeof ttl !== "number" || !Number.isFinite(ttl) || ttl <= 0 || ttl > TOKEN_EXPIRATION_SECONDS) return deny(400, "Token lifetime missing or too long");
   return null;
 }
 

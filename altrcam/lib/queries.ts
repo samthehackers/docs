@@ -1,4 +1,4 @@
-import { and, count, desc, eq, gte, ne, sql } from "drizzle-orm";
+import { and, count, desc, eq, gte, inArray, ne, sql } from "drizzle-orm";
 import { creditLedger, payments, presets, studioSessions, subscriptions, transformations, users } from "@/db/schema";
 import { db, type DB } from "@/lib/db";
 import { ledgerBalance } from "@/lib/credits";
@@ -18,9 +18,10 @@ export async function dashboardData(userId: string, plan: Plan, d?: DB) {
   const [bal, sessions, spent, recent, presetRows, presetCount, lastPayment, activeSub] = await Promise.all([
     ledgerBalance(q, userId),
     q.select({ n: count() }).from(studioSessions).where(and(eq(studioSessions.userId, userId), gte(studioSessions.startedAt, since))),
-    // Session debits this month, per bucket: only the monthly bucket is measured against the monthly allowance.
+    // Session debits this month, net of early-drop refunds (which go back to the bucket they came from), per bucket: only
+    // the monthly bucket is measured against the monthly allowance.
     q.select({ bucket: creditLedger.bucket, s: sql<number>`coalesce(-sum(${creditLedger.delta}),0)::int` }).from(creditLedger)
-      .where(and(eq(creditLedger.userId, userId), eq(creditLedger.reason, "session"), gte(creditLedger.createdAt, since)))
+      .where(and(eq(creditLedger.userId, userId), inArray(creditLedger.reason, ["session", "session_refund"]), gte(creditLedger.createdAt, since)))
       .groupBy(creditLedger.bucket),
     q.select().from(transformations).where(eq(transformations.userId, userId)).orderBy(desc(transformations.createdAt)).limit(6),
     q.select({ id: presets.id, name: presets.name, kind: presets.kind }).from(presets).where(eq(presets.userId, userId))
@@ -65,7 +66,7 @@ export async function usageHistory(userId: string, d?: DB, limit = 8) {
   const [sessions, credits] = await Promise.all([
     q.select({
       id: studioSessions.id, startedAt: studioSessions.startedAt, endedAt: studioSessions.endedAt, endReason: studioSessions.endReason,
-      secondsBilled: studioSessions.secondsBilled, lastHeartbeatAt: studioSessions.lastHeartbeatAt,
+      secondsBilled: studioSessions.secondsBilled, refundedCredits: studioSessions.refundedCredits, lastHeartbeatAt: studioSessions.lastHeartbeatAt,
       // Only the cut-down prompt leaves the database: `settings` is client-supplied and can be large.
       prompt: sql<string | null>`case when jsonb_typeof(${studioSessions.settings}->'prompt') = 'string' then left(${studioSessions.settings}->>'prompt', ${PROMPT_PREVIEW}) end`,
     }).from(studioSessions).where(eq(studioSessions.userId, userId)).orderBy(desc(studioSessions.startedAt)).limit(limit),

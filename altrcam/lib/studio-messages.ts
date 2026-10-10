@@ -3,6 +3,8 @@
  * No React and no browser APIs, so the wording can be reviewed, changed and unit-tested in one place.
  */
 import type { LucyFailure } from "@/lib/fal/signaling";
+import { CREDITS_RULE } from "@/lib/availability";
+import { CONNECT_TIMEOUT_SECONDS } from "@/lib/plans";
 
 /**
  * The two standing notes under the preview. Change them here.
@@ -11,11 +13,11 @@ import type { LucyFailure } from "@/lib/fal/signaling";
  */
 export const STUDIO_NOTICES = {
   videoOnly: "AltrCam transforms video only. Your microphone isn't used, and no audio is captured or sent.",
-  unverified: "Live transformation hasn't been tested against the real AI service yet, so connecting may not work. Credits are used while a session is open, even if it never connects.",
+  unverified: `Live transformation hasn't been tested against the real AI service yet, so connecting may not work. ${CREDITS_RULE}`,
 } as const;
 
 export const MESSAGES = {
-  reconnectHint: "Reconnect starts a new session, billed from its start.",
+  reconnectHint: "Reconnect starts a new session. Credits count only once its transformed video is live.",
   sessionClosed: "The session was closed.",
   endUnconfirmed: "We couldn't reach the server to close the session. It will be closed automatically when the server notices it has gone quiet, or when you next start one.",
   offlineIdle: "You're offline. Connect to the internet to go live.",
@@ -26,8 +28,15 @@ export const MESSAGES = {
   outOfCredits: "You're out of credits.",
   sessionLimit: "Session limit reached for your plan.",
   sessionEnded: "Session ended.",
+  neverConnected: "The transformed video didn't start in time, so the session was closed. Nothing was charged.",
+  nothingCharged: "Nothing was charged.",
+  tryAgainHint: "Try again starts a new session. Credits count only once its transformed video is live.",
+  autoRetry: "The video connection couldn't be set up, so we're trying once more with a new session. Nothing is charged until the video shows.",
   unreadableStart: "The server's reply to starting a session was unreadable. Try again.",
 } as const;
+
+/** Shown when the server gave back what a session that dropped early was charged (lib/metering.ts refundEarlyDrop). */
+export const refundedText = (n: number) => `We refunded ${n.toLocaleString("en")} credit${n === 1 ? "" : "s"}.`;
 
 /** A message shown above the controls. `retryLabel` makes the primary button a retry with that label. */
 export interface Notice {
@@ -40,15 +49,17 @@ export interface Notice {
 
 // ---------- starting a session ----------
 
-export type StartResult = { network: true } | { status: number; error?: string };
+export type StartResult = { network: true } | { status: number; error?: string; code?: string };
 export interface StartProblem { message: string; retry: boolean; outOfCredits: boolean }
 
 /** What to say when POST /api/studio/session/start fails. `error` is the server's own message, used where it is specific and honest. */
 export function describeStartFailure(r: StartResult): StartProblem {
   if ("network" in r) return { message: "Couldn't reach AltrCam. Check your internet connection, then try again.", retry: true, outOfCredits: false };
-  const { status, error } = r;
+  const { status, error, code } = r;
   if (status === 401) return { message: "You've been signed out. Reload the page and sign in again.", retry: false, outOfCredits: false };
   if (status === 402) return { message: MESSAGES.outOfCredits, retry: false, outOfCredits: true };
+  // The never-connected pause: the server says how long, and why.
+  if (status === 429 && code === "connect_cooldown") return { message: error ?? "Your last few attempts didn't connect, so going live is paused for a few minutes.", retry: true, outOfCredits: false };
   if (status === 429) return { message: "Too many sessions started in a short time. Wait a minute, then try again.", retry: true, outOfCredits: false };
   if (status === 503) return { message: error ?? "Live transformation isn't available right now. Try again later.", retry: true, outOfCredits: false };
   if (status >= 500) return { message: `Something went wrong on our side starting the session (HTTP ${status}). Try again in a moment.`, retry: true, outOfCredits: false };
@@ -57,9 +68,14 @@ export function describeStartFailure(r: StartResult): StartProblem {
 
 // ---------- a connection that failed ----------
 
+/** A failed attempt: the connection's own failure, or the Studio's connect timeout (no transformed frame in time). */
+export type StudioFailure = LucyFailure | { code: "connect_timeout"; message: string; status?: undefined };
+
 /** Plain-language reason for a failed connection attempt. `f.message` stays technical and is not shown here, except for the service's own error text. */
-export function describeFailure(f: LucyFailure): string {
+export function describeFailure(f: StudioFailure): string {
   switch (f.code) {
+    case "connect_timeout":
+      return `The transformed video didn't start within ${CONNECT_TIMEOUT_SECONDS} seconds.`;
     case "token_refused":
       if (f.status === 401) return "You've been signed out, so the server wouldn't allow the video connection. Reload the page and sign in again.";
       if (f.status === 403) return "The server wouldn't allow the video connection because this session is no longer open.";

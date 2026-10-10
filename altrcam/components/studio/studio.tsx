@@ -9,7 +9,8 @@ import { BUILTIN_PRESETS, TYPE_BY_KIND, type PresetKind } from "@/lib/studio-pre
 import { readUrl, uploadFile } from "@/lib/client-upload";
 import { CAPTURE_SIZE, HEARTBEAT_SECONDS } from "@/lib/plans";
 import { createCamera, EMPTY_CAMERA_VIEW, type Camera as CameraController, type CameraView } from "@/lib/studio-camera";
-import { browserNetwork, createStudioSession, initialSessionView, type SessionView, type StartInputs, type StudioSession } from "@/lib/studio-session";
+import { watchFirstFrame } from "@/lib/first-frame";
+import { browserNetwork, createStudioSession, initialSessionView, PHASE_LABELS, sessionPhase, type SessionView, type StartInputs, type StudioSession } from "@/lib/studio-session";
 import { MESSAGES, STUDIO_NOTICES } from "@/lib/studio-messages";
 import { cn } from "@/lib/utils";
 
@@ -47,11 +48,13 @@ export function Studio(p: StudioProps) {
   const remoteStream = useRef<MediaStream | null>(null);
   const recorder = useRef<MediaRecorder | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const stopFrameWatch = useRef<(() => void) | null>(null);
   const startBalance = useRef(p.balance);
   const mounted = useRef(true);
 
   const live = sess.state === "live" || sess.state === "connecting";
   const failed = sess.state === "failed";
+  const phase = sessionPhase(sess);
   const inputs = (): StartInputs => ({ prompt, expand, kind, referencePath: refPath });
 
   const flash = (m: string) => {
@@ -89,6 +92,10 @@ export function Studio(p: StudioProps) {
       onRemoteStream: (st) => {
         remoteStream.current = st;
         if (!st && recorder.current?.state === "recording") recorder.current.stop();
+        stopFrameWatch.current?.();
+        stopFrameWatch.current = null;
+        // Credits count from the first transformed frame on screen, so watch for it before the stream is attached.
+        if (st && outRef.current) stopFrameWatch.current = watchFirstFrame(outRef.current, () => session.current?.firstFrame());
         if (outRef.current) outRef.current.srcObject = st;
       },
       network: browserNetwork(),
@@ -100,7 +107,7 @@ export function Studio(p: StudioProps) {
     setSess(s.view()); // picks up whether the browser starts out offline
     const onUnload = () => { const id = s.sessionId(); if (id) navigator.sendBeacon("/api/studio/session/end", new Blob([JSON.stringify({ sessionId: id })], { type: "application/json" })); };
     window.addEventListener("pagehide", onUnload);
-    return () => { window.removeEventListener("pagehide", onUnload); off(); s.dispose(); session.current = null; };
+    return () => { window.removeEventListener("pagehide", onUnload); off(); s.dispose(); session.current = null; stopFrameWatch.current?.(); stopFrameWatch.current = null; };
   }, []);
 
   async function onRef(file: File | undefined) {
@@ -159,9 +166,9 @@ export function Studio(p: StudioProps) {
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
-          <span className={cn("inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs", sess.state === "live" ? "border-green-500/50 text-green-400" : failed ? "border-destructive/50 text-destructive" : "text-muted-foreground")} role="status">
-            <span className={cn("h-2 w-2 rounded-full", sess.state === "live" ? "bg-green-400" : sess.state === "connecting" ? "animate-pulse bg-yellow-400" : failed ? "bg-destructive" : "bg-muted-foreground")} />
-            {sess.state === "idle" ? "Ready" : sess.state === "connecting" ? "Connecting" : sess.state === "live" ? "Live" : failed ? "Failed" : "Closed"}
+          <span className={cn("inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs", phase === "live" ? "border-green-500/50 text-green-400" : failed ? "border-destructive/50 text-destructive" : "text-muted-foreground")} role="status" data-testid="session-phase">
+            <span className={cn("h-2 w-2 rounded-full", phase === "live" ? "bg-green-400" : phase === "connecting" || phase === "reconnecting" ? "animate-pulse bg-yellow-400" : failed ? "bg-destructive" : "bg-muted-foreground")} />
+            {PHASE_LABELS[phase]}
           </span>
         </div>
         <div className="text-right" aria-live="polite">
@@ -189,7 +196,7 @@ export function Studio(p: StudioProps) {
         </figure>
         <figure className="relative overflow-hidden rounded-lg border bg-black">
           <video ref={outRef} autoPlay playsInline className="aspect-video w-full object-cover" aria-label="AI transformed output" />
-          {sess.state !== "live" && <div className="absolute inset-0 grid place-items-center text-sm text-muted-foreground">{sess.state === "connecting" ? <Loader2 className="h-6 w-6 animate-spin" aria-label="Connecting" /> : failed ? "Not connected" : "Your transformation appears here"}</div>}
+          {phase !== "live" && <div className="absolute inset-0 grid place-items-center text-sm text-muted-foreground">{phase === "connecting" || phase === "reconnecting" ? <Loader2 className="h-6 w-6 animate-spin" aria-label={PHASE_LABELS[phase]} /> : failed ? "Not connected" : "Your transformation appears here"}</div>}
           <figcaption className="px-3 py-2 text-xs text-muted-foreground">AltrCam</figcaption>
         </figure>
       </div>

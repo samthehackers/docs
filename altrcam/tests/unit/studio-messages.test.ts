@@ -5,6 +5,8 @@
 import { describe, expect, it } from "vitest";
 import { describeFailure, describeStartFailure, MESSAGES, STUDIO_NOTICES } from "@/lib/studio-messages";
 import type { FailureCode, LucyFailure } from "@/lib/fal/signaling";
+import { CLIENT_FAILURE_CODES } from "@/lib/session-end";
+import { REFUNDABLE_FAILURES } from "@/lib/plans";
 
 const CODES: FailureCode[] = ["token_refused", "token_unreachable", "socket_error", "model_error", "bad_answer", "answer_timeout", "ice_failed", "connection_lost", "setup_error"];
 
@@ -13,6 +15,12 @@ describe("connection failures", () => {
     const texts = CODES.map((code) => describeFailure({ code, message: "Model error" }));
     expect(new Set(texts).size).toBe(CODES.length);
     for (const t of texts) { expect(t).toMatch(/[.]$/); expect(t).not.toMatch(/undefined|null|\[object/); }
+  });
+
+  it("every failure code is one the end route accepts, and only connection or AI-service failures are refundable", () => {
+    for (const c of CODES) expect(CLIENT_FAILURE_CODES).toContain(c);
+    for (const c of REFUNDABLE_FAILURES) expect(CODES).toContain(c);
+    expect([...REFUNDABLE_FAILURES].sort()).toEqual(["connection_lost", "ice_failed", "model_error", "socket_error"]);
   });
 
   it("a refused token says what the status means", () => {
@@ -61,9 +69,10 @@ describe("the standing notes", () => {
     expect(STUDIO_NOTICES.videoOnly).toMatch(/microphone/i);
     expect(STUDIO_NOTICES.videoOnly).toMatch(/no audio is captured or sent/i);
   });
-  it("say honestly that live transformation hasn't been tested against the real service, and that failed attempts use credits", () => {
+  it("say honestly that live transformation hasn't been tested against the real service, and how credits are counted", () => {
     expect(STUDIO_NOTICES.unverified).toMatch(/hasn't been tested against the real/i);
-    expect(STUDIO_NOTICES.unverified).toMatch(/Credits are used while a session is open, even if it never connects/);
+    expect(STUDIO_NOTICES.unverified).toContain("Credits count only while your transformed video is live. If it never connects, you pay nothing.");
+    expect(STUDIO_NOTICES.unverified).not.toMatch(/even if it never connects/);
   });
   it("don't claim it works", () => {
     for (const t of Object.values(STUDIO_NOTICES)) expect(t).not.toMatch(/\b(works|verified and|guaranteed|fully|always)\b/i);

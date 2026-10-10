@@ -1,12 +1,13 @@
 import Link from "next/link";
 import { AvailabilityNotice } from "@/components/availability-notice";
-import { LIVE_AVAILABILITY } from "@/lib/availability";
+import { CREDITS_RULE, EARLY_DROP_REFUND, LIVE_AVAILABILITY } from "@/lib/availability";
 import { PAYMENT_METHODS_TEXT } from "@/lib/public-copy";
 
 export const metadata = { title: "FAQ" };
 
 const faqs = [
-  { q: "What is a credit?", a: "One credit is one second of session time, counted from when you press Go live until the session ends. If the connection fails, the seconds spent trying still count." },
+  { q: "What is a credit?", a: `One credit is one second of live transformed video, counted from the moment the transformed video first appears until the session ends. ${CREDITS_RULE} The time spent connecting is free.` },
+  { q: "What if the video drops right after it starts?", a: `${EARLY_DROP_REFUND} The Studio tells you when it happens. Stopping it yourself is not refunded.` },
   { q: "Do monthly credits roll over?", a: "No. Monthly plan credits refill each cycle. Top-up credits you buy never expire and are used after your monthly credits." },
   { q: "What happens when I run out of credits?", a: "The session stops automatically. You can top up or upgrade from the Billing page and go live again." },
   { q: "Is my video stored?", a: "AltrCam does not record your live video. Snapshots are saved to your History when you press Snapshot (every plan). Clips, on plans that include recording, are downloaded to your own device; AltrCam does not store them. What the third-party AI service does with video it receives is governed by that service's own terms, which this site does not yet describe." },

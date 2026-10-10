@@ -137,7 +137,7 @@ export function PresetsCard(p: { presets: { id: number; name: string; kind: stri
   );
 }
 
-export interface SessionRow { id: string; startedAt: Date; endReason: string | null; lastHeartbeatAt: Date; secondsBilled: number; prompt: string | null }
+export interface SessionRow { id: string; startedAt: Date; endReason: string | null; lastHeartbeatAt: Date; secondsBilled: number; refundedCredits?: number; prompt: string | null }
 export interface CreditRow { id: number; createdAt: Date; delta: number; bucket: string; reason: string }
 
 export function UsageHistory(p: { sessions: SessionRow[]; credits: CreditRow[] }) {
@@ -156,9 +156,9 @@ export function UsageHistory(p: { sessions: SessionRow[]; credits: CreditRow[] }
                   <div className="min-w-0">
                     <p className="font-medium">{fmtDate(s.startedAt)} · {fmtDuration(s.secondsBilled)}</p>
                     {s.prompt && <p className="truncate text-xs text-muted-foreground">{s.prompt}</p>}
-                    <p className="text-xs text-muted-foreground">{sessionEndLabel(s.endReason, s.lastHeartbeatAt)}</p>
+                    <p className="text-xs text-muted-foreground">{sessionEndLabel(s.endReason, s.lastHeartbeatAt)}{s.refundedCredits ? ` · ${fmtNum(s.refundedCredits)} credits refunded` : ""}</p>
                   </div>
-                  <span className="shrink-0 tabular-nums">{fmtNum(s.secondsBilled)} <span className="text-xs text-muted-foreground">credits</span></span>
+                  <span className="shrink-0 tabular-nums">{fmtNum(s.secondsBilled - (s.refundedCredits ?? 0))} <span className="text-xs text-muted-foreground">credits</span></span>
                 </li>
               ))}
             </ul>

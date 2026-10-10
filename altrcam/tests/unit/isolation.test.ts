@@ -190,7 +190,7 @@ describe("user A cannot touch user B's data", () => {
     for (const secret of ["B's preset", "secret", "ref_B", "TOPUP_1K", SESSION_B, "B's clip", "topup_purchase"]) expect(everything).not.toContain(secret);
   });
   it("a user can heartbeat their own session (control)", async () => {
-    await d.insert(studioSessions).values({ id: "22222222-2222-4222-8222-222222222222", userId: "A", maxSeconds: 120, startedAt: new Date(Date.now() - 20_000) });
+    await d.insert(studioSessions).values({ id: "22222222-2222-4222-8222-222222222222", userId: "A", maxSeconds: 120, startedAt: new Date(Date.now() - 20_000), liveAt: new Date(Date.now() - 20_000) });
     const r = await call(heartbeat.POST, json({ sessionId: "22222222-2222-4222-8222-222222222222" }));
     expect(r.status).toBe(200);
     expect((await ledgerBalance(d, "A")).total).toBeLessThan(100);

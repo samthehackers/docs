@@ -1,6 +1,7 @@
 import {
   pgTable, text, integer, timestamp, jsonb, real, index, uniqueIndex, serial, bigserial, pgEnum, boolean,
 } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 
 export const planEnum = pgEnum("plan", ["FREE", "PRO", "LIFETIME"]);
 export const bucketEnum = pgEnum("credit_bucket", ["monthly", "purchased"]);
@@ -22,6 +23,8 @@ export const users = pgTable("users", {
   creditsMonthly: integer("credits_monthly").notNull().default(0),
   creditsPurchased: integer("credits_purchased").notNull().default(0),
   lowCreditNotifiedAt: timestamp("low_credit_notified_at", { withTimezone: true }),
+  /** When the user accepted the Studio's use rule (no impersonating real people, no deceiving anyone). Go live is refused until set. */
+  consentAcceptedAt: timestamp("consent_accepted_at", { withTimezone: true }),
   deletedAt: timestamp("deleted_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
@@ -70,12 +73,21 @@ export const creditLedger = pgTable("credit_ledger", {
   refType: text("ref_type"),
   refId: text("ref_id"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-}, (t) => [index("ledger_user_created_idx").on(t.userId, t.createdAt)]);
+}, (t) => [
+  index("ledger_user_created_idx").on(t.userId, t.createdAt),
+  // A session is refunded at most once per bucket, enforced by the database as well as by studio_sessions.refunded_at.
+  uniqueIndex("ledger_session_refund_uq").on(t.refType, t.refId, t.bucket).where(sql`${t.reason} = 'session_refund'`),
+]);
 
 export const studioSessions = pgTable("studio_sessions", {
   id: text("id").primaryKey(),
   userId: text("user_id").notNull().references(() => users.id),
   startedAt: timestamp("started_at", { withTimezone: true }).notNull().defaultNow(),
+  /**
+   * Server time at which the browser reported the first transformed frame (POST /api/studio/session/live). Null while the
+   * session is still connecting. Credits are counted only from here: a session that never goes live is never billed.
+   */
+  liveAt: timestamp("live_at", { withTimezone: true }),
   lastHeartbeatAt: timestamp("last_heartbeat_at", { withTimezone: true }).notNull().defaultNow(),
   endedAt: timestamp("ended_at", { withTimezone: true }),
   endReason: text("end_reason"),
@@ -85,6 +97,11 @@ export const studioSessions = pgTable("studio_sessions", {
   settings: jsonb("settings"),
   avgFps: real("avg_fps"),
   avgLatencyMs: real("avg_latency_ms"),
+  /** The browser's failure code (lib/fal/signaling.ts FailureCode, or connect_timeout) when it ended the session for a failure. */
+  failureCode: text("failure_code"),
+  /** Set once, when the credits charged for this session were refunded (it dropped early for a connection or AI-service failure). */
+  refundedAt: timestamp("refunded_at", { withTimezone: true }),
+  refundedCredits: integer("refunded_credits").notNull().default(0),
 }, (t) => [index("sessions_user_ended_idx").on(t.userId, t.endedAt)]);
 
 export const transformations = pgTable("transformations", {

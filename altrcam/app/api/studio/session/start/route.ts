@@ -8,7 +8,7 @@ import { studioSessions } from "@/db/schema";
 import { getUserRow } from "@/lib/users";
 import { ledgerBalance } from "@/lib/credits";
 import { getPlan } from "@/lib/plan-config";
-import { closeOpenSessions } from "@/lib/metering";
+import { closeOpenSessions, neverLiveCooldown } from "@/lib/metering";
 import { capabilities } from "@/lib/config";
 
 const Body = z.object({ presetId: z.number().int().optional(), settings: z.record(z.unknown()).optional() });
@@ -22,6 +22,12 @@ export const POST = handle(async (req: Request) => {
   if (!user) throw new HttpError(403, "Account not found");
   const bal = await ledgerBalance(db(), userId);
   if (bal.total <= 0) throw new HttpError(402, "Out of credits", { code: "no_credits" });
+  // A session that never shows video costs nothing, so repeated attempts that never go live are paused for a while.
+  const wait = await neverLiveCooldown(userId);
+  if (wait !== null) {
+    const minutes = Math.ceil(wait / 60);
+    throw new HttpError(429, `Your last few attempts didn't connect, so going live is paused for about ${minutes} minute${minutes === 1 ? "" : "s"}. Nothing was charged for them. A VPN, firewall or restrictive network is a common cause: try another network when you go live again.`, { code: "connect_cooldown", retryAfterSeconds: wait });
+  }
 
   // One live session per user: settle and close any earlier one first (a silent one is billed only to its last heartbeat).
   await closeOpenSessions(userId);

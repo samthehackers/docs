@@ -31,6 +31,7 @@ import { DEFAULT_PLANS } from "@/lib/plans";
 import Dashboard from "@/app/(app)/dashboard/page";
 import Support from "@/app/(app)/support/page";
 import History from "@/app/(app)/history/page";
+import { PHASE_LABELS } from "@/lib/studio-session";
 
 let d: DB;
 beforeAll(async () => { d = await testDb(); h.db = d; }, 60_000);
@@ -292,7 +293,8 @@ describe("/support", () => {
     expect(t).toMatch(/VPN/);
     expect(t).toMatch(/firewall/i);
     expect(t).toContain("Connecting");
-    expect(t).toMatch(/Failed or Closed/);
+    for (const label of Object.values(PHASE_LABELS)) expect(t).toContain(`${label}:`); // every status word the Studio shows is explained
+    expect(t).not.toMatch(/Failed or Closed/);
     // credits
     expect(t).toContain("1 credit = 1 second");
     expect(t).toMatch(/monthly credits/i);
@@ -302,17 +304,19 @@ describe("/support", () => {
     expect(t).toMatch(/checking in|check-in/i);
     // payments
     expect(t).toMatch(/charged twice/i);
-    expect(t).toMatch(/Refunds are not automatic/);
+    expect(t).toMatch(/Payment refunds are not automatic/);
     // deletion
     expect(t).toMatch(/Delete account/);
     // video only
     expect(t).toMatch(/Only video/);
     expect(t).toMatch(/does not use your microphone/i);
   });
-  it("tells people that Reconnect starts a fresh session billed from its own start", async () => {
+  it("tells people that Reconnect starts a fresh session and that an attempt with no video costs nothing", async () => {
     const t = text(await Support());
     expect(t).toMatch(/Press Reconnect \(or Stop, then Go live again\)/);
-    expect(t).toMatch(/billed from its own start/);
+    expect(t).toMatch(/An attempt that never shows transformed video costs nothing/);
+    expect(t).toContain("Credits count only while your transformed video is live. If it never connects, you pay nothing.");
+    expect(t).not.toMatch(/billed from its own start|billed for the time it was open/);
   });
   it("reads session limits and allowances from the effective plan config", async () => {
     process.env.DATABASE_URL = "postgres://unused/ignored";
@@ -323,7 +327,7 @@ describe("/support", () => {
   });
   it("promises no response time and no refund, and does not claim the live connection is verified", async () => {
     const t = text(await page());
-    expect(t).not.toMatch(/within \d|\d+ ?(hours?|business days?)|24\/7|guarantee|instantly|always works|fully refund/i);
+    expect(t).not.toMatch(/(respond|reply|answer you) within|within \d+ ?(hours?|days?|business days?)|\d+ ?(hours?|business days?)|24\/7|guarantee|instantly|always works|fully refund/i);
     expect(t).toMatch(/may be on our side/);
   });
 });

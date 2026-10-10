@@ -60,6 +60,37 @@ All optional: the site runs without them, it just sells nothing that is not full
 - A product (in a currency) whose price is unset is **hidden** on `/pricing` and `/billing` and **refused by checkout** (409, nothing charged). There is no "TBA" any more.
 - The old single-currency names (`PRICE_CURRENCY`, `PRICE_PRO_MONTHLY`, `PRICE_PRO_YEARLY`, `PRICE_LIFETIME`, `PRICE_TOPUP_1K`, `PRICE_TOPUP_5K`, `PRICE_TOPUP_15K`) were never set on any deployment, so nothing reads them and there is no backward compatibility. Delete them if you added them anywhere.
 - Every payment is verified against the **pending row** written at checkout, which pins the user, product, exact amount and currency. Paystack renewals have no pending row and are checked against the configured NGN price of the plan.
+
+**Margin guard** (`lib/margin.ts`). A paid product is only on sale when it is proven not to lose money if the buyer uses every credit it grants. Otherwise it is hidden on `/pricing` and `/billing` and checkout refuses it, exactly like an unpriced product.
+
+| Variable | Meaning |
+|---|---|
+| `FAL_COST_PER_SECOND_USD` | What one second of model time costs you, in USD (1 credit = 1 second). **Unset = nothing paid is on sale.** Take it from fal's pricing page or your fal invoices, not from this file |
+| `FX_NGN_PER_USD` | Naira per US dollar, to compare NGN prices with the USD cost. **Unset = nothing priced in NGN is on sale.** Use a rate you are comfortable with (a cautious one is safer); it is not fetched automatically |
+| `MIN_MARGIN` | Minimum gross margin, from 0 to just under 1. Default `0.5` (50%). Set but invalid = nothing paid is on sale |
+
+Full usage is: Pro monthly = one month's allowance; Pro yearly = 12 months; Lifetime = 36 months of its monthly allowance; a top-up = its credits. The allowances are the **effective** ones (Admin → Plans), so raising an allowance there can take a product off sale. Payment fees and the cost of free users are not included. `npm run preflight` prints the table (`npx tsx scripts/preflight.ts --margin-only` prints only the table).
+
+Worked example, **not proposed prices**: what the guard demands with today's default allowances if fal really costs the unverified $0.04/s from section 1, at an illustrative (not current) rate of 1,500 NGN/USD. A unit test (`tests/unit/margin.test.ts`) fails if this example ever loses money, and it covers every product that can be priced (Lifetime only in USD here: at 6,000 credits a month its NGN minimum, ₦25,920,000, is more than a payment row can hold).
+
+<!-- margin-example:begin -->
+```env
+FAL_COST_PER_SECOND_USD=0.04
+FX_NGN_PER_USD=1500
+MIN_MARGIN=0.5
+PRICE_PRO_MONTHLY_NGN=75000000
+PRICE_PRO_YEARLY_NGN=900000000
+PRICE_LIFETIME_USD=1800000
+PRICE_TOPUP_1K_NGN=16000000
+PRICE_TOPUP_1K_USD=11000
+PRICE_TOPUP_5K_NGN=80000000
+PRICE_TOPUP_5K_USD=55000
+PRICE_TOPUP_15K_NGN=240000000
+PRICE_TOPUP_15K_USD=165000
+```
+<!-- margin-example:end -->
+
+That is ₦750,000 a month for Pro, $18,000 for Lifetime and ₦160,000 for 1,000 credits: at $0.04/s the current allowances cannot be sold at ordinary prices. Confirm the real cost, then lower the allowances (Admin → Plans) or raise prices until the table passes.
 <!-- END pricing-env (stream A4) -->
 
 ### The database (already created)

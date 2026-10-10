@@ -2,6 +2,7 @@ import {
   buyerPrice, listPrice, PROVIDER_FOR_CURRENCY, providerSells,
   type Currency, type EnvSource, type PayProvider, type Plan, type PlanConfig, type ProductId,
 } from "@/lib/plans";
+import { checkMargin, marginInputs } from "@/lib/margin";
 import { money } from "@/lib/utils";
 
 /**
@@ -18,7 +19,7 @@ export interface Offer {
   listMinor: number;
 }
 
-export type NotOfferedReason = "crypto_subscription" | "no_price";
+export type NotOfferedReason = "crypto_subscription" | "no_price" | "margin_unproven" | "margin_fails";
 export type Quote = { ok: true; offer: Offer } | { ok: false; reason: NotOfferedReason; message: string };
 
 export interface QuoteContext {
@@ -32,8 +33,15 @@ export interface QuoteContext {
 const MESSAGES: Record<NotOfferedReason, string> = {
   crypto_subscription: "Crypto can't pay for a subscription. Pay for Pro by card. Nothing was charged.",
   no_price: "This isn't on sale right now. Nothing was charged.",
+  margin_unproven: "This isn't on sale right now. Nothing was charged.",
+  margin_fails: "This isn't on sale right now. Nothing was charged.",
 };
 
+/**
+ * Is it on sale, and at what price? Not on sale when: crypto is asked to sell a subscription; there is no price in that currency;
+ * or the margin guard (lib/margin.ts) can't prove, or fails, MIN_MARGIN at full usage FOR THE PRICE THIS BUYER WOULD PAY
+ * (so a discounted top-up is checked at its discounted price). Buyers only ever see "not on sale"; the reason is for logs.
+ */
 export function quote(product: ProductId, currency: Currency, ctx: QuoteContext): Quote {
   const env = ctx.env ?? process.env;
   const provider = PROVIDER_FOR_CURRENCY[currency];
@@ -42,6 +50,8 @@ export function quote(product: ProductId, currency: Currency, ctx: QuoteContext)
   const listMinor = listPrice(product, currency, env);
   const amountMinor = buyerPrice(product, currency, ctx.buyerPlan, env);
   if (listMinor === null || amountMinor === null) return no("no_price");
+  const m = checkMargin(product, currency, amountMinor, ctx.plans, marginInputs(env));
+  if (m.status !== "pass") return no(m.status === "fail" ? "margin_fails" : "margin_unproven");
   return { ok: true, offer: { product, currency, provider, amountMinor, listMinor } };
 }
 

@@ -14,6 +14,8 @@ import { PgTable } from "drizzle-orm/pg-core";
 import * as schema from "@/db/schema";
 import { env, type Env } from "@/lib/env";
 import { listPrice, PRODUCTS } from "@/lib/plans";
+import { formatMarginTable, marginInputs, marginTable } from "@/lib/margin";
+import { getPlans } from "@/lib/plan-config";
 
 type Level = "PASS" | "FAIL" | "WARN" | "SKIP";
 const rows: { name: string; level: Level; note: string }[] = [];
@@ -31,7 +33,24 @@ async function check(name: string, fn: () => Promise<[Level, string] | void>) {
 // Derived from the real schema so this can never drift from the migrations.
 const EXPECTED_TABLES = (Object.values(schema) as unknown[]).filter((v): v is PgTable => is(v, PgTable)).map((t) => getTableName(t));
 
+/**
+ * The margin guard's view of every product, from the price, cost and FX variables and the EFFECTIVE plan limits (admin overrides
+ * when the database is reachable, else the code defaults). Printed first, on its own with --margin-only:
+ *   FAL_COST_PER_SECOND_USD=0.04 FX_NGN_PER_USD=1500 npx tsx scripts/preflight.ts --margin-only
+ */
+async function marginReport() {
+  const plans = await getPlans();
+  const rows = marginTable(plans);
+  console.log(formatMarginTable(rows, marginInputs()) + "\n");
+  const hidden = rows.filter((r) => r.priceMinor !== null && r.status !== "pass");
+  if (hidden.length) rec("Margin guard", "WARN", `priced but NOT on sale: ${hidden.map((r) => `${r.product} ${r.currency}${r.buyer === "lifetime member" ? " (Lifetime member price)" : ""}: ${r.verdict?.detail}`).join("; ")}`);
+  else if (!rows.some((r) => r.status === "pass")) rec("Margin guard", "WARN", "no product is priced, so nothing paid is on sale");
+  else rec("Margin guard", "PASS", `${rows.filter((r) => r.status === "pass").length} priced product/currency rows pass`);
+}
+
 async function main() {
+  try { await marginReport(); } catch (err) { rec("Margin guard", "FAIL", err instanceof Error ? err.message : String(err)); }
+  if (process.argv.includes("--margin-only")) return report();
   let e: Env | null = null;
   await check("Environment variables validate", async () => { e = env(); });
   if (!e) {

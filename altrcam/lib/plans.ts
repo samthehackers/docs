@@ -87,11 +87,14 @@ export function providerSells(provider: PayProvider, product: ProductId): boolea
 /** Where prices are read from: process.env in the app; a plain object in tests and the preflight table. */
 export type EnvSource = Record<string, string | undefined>;
 
-/** A price variable's value: a positive whole number of minor units, else null (unset, empty, decimal, zero, negative, garbage). */
+/** payments.amount_minor is a Postgres integer: a larger price could not even be recorded, so it is treated as invalid. */
+export const MAX_PRICE_MINOR = 2_147_483_647;
+
+/** A price variable's value: a positive whole number of minor units that fits a payment row, else null (unset, empty, decimal, zero, negative, too big, garbage). */
 export function parseMinor(v: string | undefined): number | null {
   if (v === undefined || v.trim() === "") return null;
   const n = Number(v);
-  return Number.isSafeInteger(n) && n > 0 ? n : null;
+  return Number.isSafeInteger(n) && n > 0 && n <= MAX_PRICE_MINOR ? n : null;
 }
 
 /** The configured list price in minor units, read at call time; null when that currency has no valid price. Never throws. */

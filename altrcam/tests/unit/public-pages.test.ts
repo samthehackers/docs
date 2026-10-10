@@ -41,6 +41,8 @@ const PRICES_FIXTURE = {
   PRICE_PRO_MONTHLY_NGN: "1500000", PRICE_PRO_YEARLY_NGN: "15000000", PRICE_LIFETIME_NGN: "9900000", PRICE_LIFETIME_USD: "9900",
   PRICE_TOPUP_1K_NGN: "300000", PRICE_TOPUP_5K_NGN: "1200000", PRICE_TOPUP_15K_NGN: "3000000",
   PRICE_TOPUP_1K_USD: "300", PRICE_TOPUP_5K_USD: "1200", PRICE_TOPUP_15K_USD: "3000",
+  // Margin-guard inputs that make every fixture price pass (test values, not fal's real cost or today's rate).
+  FAL_COST_PER_SECOND_USD: "0.00001", FX_NGN_PER_USD: "1500",
 };
 const ENV = { ...process.env };
 beforeEach(() => {
@@ -302,6 +304,10 @@ describe("review follow-ups: the pages that ask for money, and sentences tied to
     expect(p).not.toContain(">Lifetime</h3>");
     expect(p).toContain(">Pro</h3>");
     expect(plain(p)).not.toMatch(/TBA|Choose Lifetime/);
+    // Priced, but the margin guard can't prove the price covers the model cost: hidden too.
+    delete process.env.FAL_COST_PER_SECOND_USD;
+    expect(plain(await pricing())).toContain("Paid plans aren't on sale yet.");
+    process.env.FAL_COST_PER_SECOND_USD = "0.00001";
     for (const k of Object.keys(process.env)) if (k.startsWith("PRICE_")) delete process.env[k];
     p = await pricing();
     expect(p).toContain(">Free</h3>");

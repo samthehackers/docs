@@ -21,6 +21,8 @@ beforeAll(async () => { d = await testDb(); h.db = d; }, 60_000);
 const PRICES = {
   PRICE_PRO_MONTHLY_NGN: "1500000", PRICE_PRO_YEARLY_NGN: "15000000", PRICE_LIFETIME_NGN: "9900000", PRICE_LIFETIME_USD: "9900",
   PRICE_TOPUP_1K_NGN: "300000", PRICE_TOPUP_1K_USD: "300", PRICE_TOPUP_5K_NGN: "1200000", PRICE_TOPUP_15K_NGN: "3000000",
+  // Margin-guard inputs that make every fixture price pass (test values, not fal's real cost or today's rate).
+  FAL_COST_PER_SECOND_USD: "0.00001", FX_NGN_PER_USD: "1500",
 };
 const ENV = { ...process.env };
 type Call = { url: string; body: Record<string, unknown> };
@@ -83,6 +85,14 @@ describe("a product that is not on sale cannot be bought", () => {
     expect((await buy("PRO_YEARLY")).status).toBe(409);
     process.env.PRICE_PRO_YEARLY_NGN = "150000.50";
     expect((await buy("PRO_YEARLY")).status).toBe(409);
+    expect(calls).toHaveLength(0);
+  });
+  it("a price the margin guard can't prove, or that fails it, is refused the same way", async () => {
+    delete process.env.FAL_COST_PER_SECOND_USD;
+    expect(await buy("TOPUP_1K")).toMatchObject({ status: 409, body: { code: "margin_unproven" } });
+    process.env.FAL_COST_PER_SECOND_USD = "0.04"; // 1,000 credits = $40 of model time against ₦3,000 (= $2)
+    expect(await buy("TOPUP_1K")).toMatchObject({ status: 409, body: { code: "margin_fails" } });
+    expect(await rows()).toHaveLength(0);
     expect(calls).toHaveLength(0);
   });
   it("crypto never sells a subscription", async () => {

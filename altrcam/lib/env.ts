@@ -5,11 +5,17 @@ import { parseMinor, PRICE_ENV_NAMES } from "@/lib/plans";
  * A price is optional (unset = that product is not on sale in that currency), but a value that is set must be a positive
  * whole number of minor units: the same rule lib/plans.ts applies when it reads it, so a typo is reported, not silently hidden.
  */
-const optionalPrice = z.string().optional().refine((v) => v === undefined || v.trim() === "" || parseMinor(v) !== null, { message: "must be a positive whole number of minor units (kobo / cents)" });
+const optionalPrice = z.string().optional().refine((v) => v === undefined || v.trim() === "" || parseMinor(v) !== null, { message: "must be a positive whole number of minor units (kobo / cents), at most 2147483647" });
 const prices = Object.fromEntries(PRICE_ENV_NAMES.map((n) => [n, optionalPrice])) as Record<string, typeof optionalPrice>;
+/** Margin-guard inputs (lib/margin.ts). Optional: while unset nothing can be proven profitable, so nothing paid is on sale. */
+const optionalNumber = (ok: (n: number) => boolean, message: string) =>
+  z.string().optional().refine((v) => v === undefined || v.trim() === "" || (Number.isFinite(Number(v)) && ok(Number(v))), { message });
 
 const schema = z.object({
   ...prices,
+  FAL_COST_PER_SECOND_USD: optionalNumber((n) => n > 0, "must be a positive number of US dollars per second"),
+  FX_NGN_PER_USD: optionalNumber((n) => n > 0, "must be a positive number of naira per US dollar"),
+  MIN_MARGIN: optionalNumber((n) => n >= 0 && n < 1, "must be a number from 0 to just under 1 (0.5 = 50%)"),
   NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: z.string().min(1),
   CLERK_SECRET_KEY: z.string().min(1),
   CLERK_WEBHOOK_SECRET: z.string().min(1),

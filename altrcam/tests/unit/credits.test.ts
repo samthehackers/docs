@@ -53,7 +53,7 @@ describe("plan config", () => {
     expect(listPrice("TOPUP_1K", "NGN", env)).toBe(300000);
     expect(listPrice("TOPUP_1K", "USD", env)).toBe(250);
     expect(listPrice("LIFETIME", "NGN", env)).toBeNull();
-    for (const bad of ["", " ", "0", "-5", "12.5", "abc", "1e400"]) expect(listPrice("TOPUP_1K", "NGN", { PRICE_TOPUP_1K_NGN: bad }), bad).toBeNull();
+    for (const bad of ["", " ", "0", "-5", "12.5", "abc", "1e400", "2147483648"]) expect(listPrice("TOPUP_1K", "NGN", { PRICE_TOPUP_1K_NGN: bad }), bad).toBeNull();
   });
   it("names twelve price variables, NGN and USD for every product, and none of the old single-currency names", () => {
     expect(PRICE_ENV_NAMES).toHaveLength(12);

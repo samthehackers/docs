@@ -10,7 +10,11 @@ export const PUBLIC_ROUTES = [
   "/api/cron/(.*)",
 ];
 
-/** Everything that needs a signed-in user. Used to answer 503 (not 404/crash) when Clerk isn't configured. */
+/**
+ * Everything that needs a signed-in user: every app, admin and API path. Only these are protected (requiresSignIn in
+ * lib/route-access.ts); with Clerk they redirect to sign-in (pages) or 404 (API), without Clerk they answer 503.
+ * A new protected area must be added here, or it is served to signed-out visitors (the page's own checks still apply).
+ */
 export const PROTECTED_ROUTES = [
   "/dashboard(.*)", "/studio(.*)", "/history(.*)", "/presets(.*)", "/referrals(.*)",
   "/billing(.*)", "/settings(.*)", "/support(.*)", "/admin(.*)", "/api/(.*)",

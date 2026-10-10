@@ -1,16 +1,15 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
+import { clerkMiddleware } from "@clerk/nextjs/server";
 import { clerkConfigured } from "@/lib/config";
 import { REFERRAL } from "@/lib/plans";
 import { makeRefCookie, parseRefCookie } from "@/lib/referral-cookie";
-
-import { AUTH_URLS, PROTECTED_ROUTES, PUBLIC_ROUTES } from "@/lib/routes";
-
-const isPublic = createRouteMatcher(PUBLIC_ROUTES);
-const isProtected = createRouteMatcher(PROTECTED_ROUTES);
+import { requiresSignIn } from "@/lib/route-access";
+import { AUTH_URLS } from "@/lib/routes";
 
 const withClerk = clerkMiddleware(async (auth, req) => {
-  if (!isPublic(req)) await auth.protect();
+  // Only protected paths ask for sign-in. Protecting everything not public (as before) sent signed-out visitors on any unknown
+  // URL to /sign-in, so the branded 404 was unreachable.
+  if (requiresSignIn(req)) await auth.protect();
 
   // Referral links look like /?ref=<code>. Remember the code until the visitor signs up, with these rules:
   //  - signed-in visitors are ignored (an existing account can't be claimed anyway);
@@ -33,7 +32,7 @@ const withClerk = clerkMiddleware(async (auth, req) => {
 // Without Clerk keys, public pages still serve and protected ones say why they are unavailable.
 // Anything else falls through so unknown URLs get the normal branded 404.
 function withoutClerk(req: NextRequest) {
-  if (!isPublic(req) && isProtected(req)) return new NextResponse("Sign-in is not configured on this deployment yet.", { status: 503 });
+  if (requiresSignIn(req)) return new NextResponse("Sign-in is not configured on this deployment yet.", { status: 503 });
   return NextResponse.next();
 }
 

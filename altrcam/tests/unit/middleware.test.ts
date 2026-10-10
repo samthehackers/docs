@@ -3,14 +3,16 @@
  * options they are given and what the request handler does.
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { NextRequest } from "next/server";
 import type { ReactElement } from "react";
 
-const h = vi.hoisted(() => ({ opts: null as unknown }));
+type Handler = (auth: unknown, req: NextRequest) => Promise<Response | void>;
+const h = vi.hoisted(() => ({ opts: null as unknown, handler: null as null | ((auth: unknown, req: unknown) => Promise<Response | void>) }));
 vi.mock("@clerk/nextjs/server", async (orig) => {
   const real = await orig<typeof import("@clerk/nextjs/server")>();
   return {
     ...real,
-    clerkMiddleware: (handler: unknown, opts: unknown) => { h.opts = opts; return handler; },
+    clerkMiddleware: (handler: Handler, opts: unknown) => { h.opts = opts; h.handler = handler as typeof h.handler; return handler; },
   };
 });
 vi.mock("@clerk/nextjs", () => ({ ClerkProvider: function ClerkProvider() { return null; } }));
@@ -49,5 +51,39 @@ describe("Clerk's URLs are set in code, not by undocumented env vars", () => {
     for (const f of ["middleware.ts", "app/layout.tsx", ".env.example"]) {
       expect(readFileSync(f, "utf8"), f).not.toMatch(/NEXT_PUBLIC_CLERK_(SIGN_IN|SIGN_UP)_(URL|FALLBACK_REDIRECT_URL)=/);
     }
+  });
+});
+
+describe("the middleware's request handling", () => {
+  const req = (p: string) => new NextRequest(`http://localhost${p}`);
+  /** A stand-in for Clerk's `auth` argument: records protect() calls, signed out. */
+  const fakeAuth = () => { const protect = vi.fn(async () => {}); return Object.assign(async () => ({ userId: null }), { protect }); };
+
+  it("with Clerk: an unknown URL is not sent to sign-in (protect is not called), so the 404 page shows", async () => {
+    withClerkKeys();
+    await import("@/middleware");
+    for (const p of ["/nonexistent", "/some/old/link", "/pricing", "/api/health", "/api/webhooks/clerk"]) {
+      const auth = fakeAuth();
+      await h.handler!(auth, req(p));
+      expect(auth.protect, p).not.toHaveBeenCalled();
+    }
+  });
+  it("with Clerk: every protected area still asks for sign-in", async () => {
+    withClerkKeys();
+    await import("@/middleware");
+    for (const p of ["/dashboard", "/studio", "/history/1", "/presets", "/referrals", "/billing/success", "/settings/security", "/support", "/admin", "/api/account"]) {
+      const auth = fakeAuth();
+      await h.handler!(auth, req(p));
+      expect(auth.protect, p).toHaveBeenCalledTimes(1);
+    }
+  });
+  it("without Clerk: protected paths answer 503 with the reason; unknown paths fall through to the 404", async () => {
+    withoutClerkKeys();
+    const { default: mw } = await import("@/middleware");
+    const run = (p: string) => (mw as (r: NextRequest) => Response)(req(p));
+    expect(run("/dashboard").status).toBe(503);
+    expect(await run("/dashboard").text()).toContain("not configured");
+    expect(run("/nonexistent").headers.get("x-middleware-next")).toBe("1");
+    expect(run("/pricing").headers.get("x-middleware-next")).toBe("1");
   });
 });

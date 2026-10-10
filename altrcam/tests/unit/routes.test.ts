@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { NextRequest } from "next/server";
 import { createRouteMatcher } from "@clerk/nextjs/server";
 import { PROTECTED_ROUTES, PUBLIC_ROUTES } from "@/lib/routes";
+import { requiresSignIn } from "@/lib/route-access";
 
 const isPublic = createRouteMatcher(PUBLIC_ROUTES);
 const isProtected = createRouteMatcher(PROTECTED_ROUTES);
@@ -34,4 +35,21 @@ describe("route access rules", () => {
     expect(isPublic(req("/nonexistent"))).toBe(false);
     expect(isProtected(req("/nonexistent"))).toBe(false);
   });
+});
+
+describe("requiresSignIn: what the middleware protects (both variants use it)", () => {
+  it.each(["/nonexistent", "/definitely-not-a-page", "/foo/bar/baz", "/blog/2026/post", "/sign-inn", "/pricing-secret", "/.well-known/thing"])(
+    "%s (unknown) is not protected, so it gets the branded 404", (p) => expect(requiresSignIn(req(p))).toBe(false));
+
+  // Every protected prefix, exactly as listed, still requires sign-in at its root and below it.
+  const prefixes = PROTECTED_ROUTES.map((r) => r.replace(/\(\.\*\)$/, ""));
+  it("covers every entry of PROTECTED_ROUTES", () => expect(prefixes.length).toBe(PROTECTED_ROUTES.length));
+  it.each(prefixes.filter((p) => p !== "/api/"))("%s and everything under it requires sign-in", (p) => {
+    expect(requiresSignIn(req(p))).toBe(true);
+    expect(requiresSignIn(req(`${p}/anything/deeper`))).toBe(true);
+    expect(requiresSignIn(req(`${p}?tab=x`))).toBe(true);
+  });
+  it.each(["/api/studio/session/start", "/api/account", "/api/admin/users", "/api/anything-new"])("%s (API) requires sign-in", (p) => expect(requiresSignIn(req(p))).toBe(true));
+  it.each(["/", "/pricing", "/sign-in", "/sign-up/verify", "/api/webhooks/clerk", "/api/health", "/api/cron/refill"])(
+    "%s is public and never asks for sign-in", (p) => expect(requiresSignIn(req(p))).toBe(false));
 });
